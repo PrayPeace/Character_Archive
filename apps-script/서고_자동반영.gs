@@ -172,6 +172,12 @@ function doGet(e) {
   if (!want || pw !== want) {
     Utilities.sleep(800);                       // 마구 넣어 보기 늦추기
     body = { ok: false };
+  } else if (e.parameter.op === 'fav') {         // 즐겨찾기 읽기 (어느 기기에서나 같게)
+    body = { ok: true, fav: JSON.parse(PropertiesService.getScriptProperties().getProperty('FAV') || '[]') };
+  } else if (e.parameter.op === 'favset') {      // 즐겨찾기 저장
+    const ids = String(e.parameter.ids || '').split(',').map(x => x.trim()).filter(x => /^[a-z]+-\d{3}$/.test(x)).slice(0, 500);
+    PropertiesService.getScriptProperties().setProperty('FAV', JSON.stringify(ids));
+    body = { ok: true, fav: ids };
   } else {
     const v = SpreadsheetApp.openById(LOG_ID).getSheetByName('세션로그').getDataRange().getDisplayValues();
     const h = v[0].filter(k => k !== '머리말');   // 머리말(확인용)은 안 보냄
