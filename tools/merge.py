@@ -1,6 +1,7 @@
 """모음집에서 새로 읽은 rows.json 을 사이트 characters.json 에 합친다.
 - 이미 있는 캐릭터(원본 탭 이름으로 찾음): 시트에서 바뀔 수 있는 칸만 새 값으로 바꿈.
   손으로 고친 서가·룰·시스템·그림·공개·비고는 그대로 둠. "고정": true 인 캐릭터는 아예 안 건드림.
+- 끝에 dedupe.py로 중복 캐릭터(이름+서가 같음)를 하나로 합침. 합쳐 지운 탭은 '다른탭'에 남아 다시 안 생김.
 - 처음 보는 탭: 새 캐릭터로 추가(서가는 룰·시대로 자동), 그림은 sync/img/<탭이름>.png 를 webp로.
 사용: python3 merge.py <작업폴더> <저장소 루트>"""
 import json, os, re, sys
@@ -20,6 +21,7 @@ def shelf(r):
     return M.get(r['시스템'], '기타')
 by_tab = {c['원본탭']: c for c in chars if not c['원본탭'].startswith('(')}
 by_name = {c['이름']: c for c in chars if c['원본탭'].startswith('(')}
+merged_tabs = {t for c in chars for t in (c.get('다른탭') or [])}  # 중복으로 합쳐 지운 탭: 다시 만들지 않음
 def next_id(rule):
     p = {'CoC': 'coc', 'UW': 'uw', 'SG': 'sg', 'TA': 'ta'}.get(rule, 'etc')
     n = max([int(c['id'].split('-')[1]) for c in chars if c['id'].startswith(p + '-')] + [0]) + 1
@@ -27,6 +29,7 @@ def next_id(rule):
 added, changed = [], []
 for r in rows:
     tab = r['원본탭']
+    if tab in merged_tabs: continue
     c = by_tab.get(tab) if not tab.startswith('(') else by_name.get(r['이름'])
     if c:
         if c.get('고정'): continue
@@ -51,5 +54,8 @@ for c in chars:
         if os.path.exists(src):
             im = Image.open(src); im.seek(0); im = im.convert('RGBA'); im.thumbnail((520, 720))
             im.save(os.path.join(ROOT, 'img', c['id'] + '.webp'), 'WEBP', quality=80); c['img'] = 'img/%s.webp' % c['id']; changed.append((c['id'], 'img'))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from dedupe import dedupe
+merged = dedupe(chars, ROOT)
 json.dump(chars, open(CJ, 'w', encoding='utf-8'), ensure_ascii=False, indent=0)
-print('added', added); print('changed', len(changed), changed[:40])
+print('added', added); print('merged', merged); print('changed', len(changed), changed[:40])
