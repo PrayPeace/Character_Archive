@@ -169,11 +169,20 @@ function doGet(e) {
   const pw = (e && e.parameter && e.parameter.pw) || '';
   const want = PropertiesService.getScriptProperties().getProperty('LOG_PASSWORD');
   let body;
+  const P = PropertiesService.getScriptProperties();
+  if (e && e.parameter && e.parameter.op === 'covers') {   // 대표 이미지 목록: 누구나 읽음(공개 그림 경로뿐)
+    return ContentService.createTextOutput(JSON.stringify({ ok: true, cover: JSON.parse(P.getProperty('COVER') || '{}') })).setMimeType(ContentService.MimeType.JSON);
+  }
   if (!want || pw !== want) {
     Utilities.sleep(800);                       // 마구 넣어 보기 늦추기
     body = { ok: false };
   } else if (e.parameter.op === 'fav') {         // 즐겨찾기 읽기 (어느 기기에서나 같게)
     body = { ok: true, fav: JSON.parse(PropertiesService.getScriptProperties().getProperty('FAV') || '[]') };
+  } else if (e.parameter.op === 'coverset') {    // 대표 이미지 바꾸기 (src 빈 값이면 원래대로)
+    const id = String(e.parameter.id || ''), src = String(e.parameter.src || '');
+    const m = JSON.parse(P.getProperty('COVER') || '{}');
+    if (!/^[a-z]+-\d{3}$/.test(id) || (src && !/^img\/(album\/[a-z]+-\d{3}\/\d+|[a-z]+-\d{3})\.webp$/.test(src))) body = { ok: false };
+    else { if (src) m[id] = src; else delete m[id]; P.setProperty('COVER', JSON.stringify(m)); body = { ok: true, cover: m }; }
   } else if (e.parameter.op === 'favset') {      // 즐겨찾기 저장
     const ids = String(e.parameter.ids || '').split(',').map(x => x.trim()).filter(x => /^[a-z]+-\d{3}$/.test(x)).slice(0, 500);
     PropertiesService.getScriptProperties().setProperty('FAV', JSON.stringify(ids));
