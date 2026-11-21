@@ -15,7 +15,7 @@
 const REPO = 'PrayPeace/Character_Archive';
 const BRANCH = 'main';
 const SUMMARY_ID = '1dauOCIxwd8xORReChEVdK7RoYzZ3vBp6pTSah2dAC30'; // 요약 시트 v5
-const LOG_ID = '12VdOKj4qn_ehY9oAIlLkJpN8xAME1QCA7VniJnjic-k';     // 세션 로그 (비공개)
+const LOG_ID = '1zdev6RtZC5djIrsiWkl6hgVspXODLBwL-x2hEPipBo8';     // 세션 로그 (비공개)
 
 function onOpen() {
   SpreadsheetApp.getUi().createMenu('📚 서고')

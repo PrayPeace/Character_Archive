@@ -192,16 +192,17 @@ async function unlock(pw){
   }catch(e){$('#pwmsg').textContent='불러오지 못했어요. 잠시 뒤 다시 해 보세요.'}
 }
 function link(l,t){return l?`<a href="${esc(l)}" target="_blank" rel="noopener">${esc(t||'열기')}</a>`:esc(t||'')}
+function vids(v,short){const L=String(v||'').split(/\n+/).map(t=>{const m=t.match(/https?:\/\/\S+/);return m?{u:m[0],t:t.replace(m[0],'').trim()}:null}).filter(Boolean);if(!L.length)return'';return L.map((x,i)=>`<a href="${esc(x.u)}" target="_blank" rel="noopener" title="${esc(x.t)}">${short?(L.length>1?'▶'+(i+1):'▶ 영상'):(L.length>1?'▶ '+esc(x.t||'영상 '+(i+1)):'▶ 영상')}</a>`).join(short?' ':'<br>')}
 function renderLogs(){
   const q=$('#lq').value.trim().toLowerCase();
   const L=LOGS.filter(x=>!q||Object.values(x).join(' ').toLowerCase().includes(q));
-  $('#logrows').innerHTML=L.map(x=>`<tr><td class="n">${esc(x['번호'])}</td><td>${esc(x['시나리오'])}</td><td>${esc(x['룰'])}</td><td>${esc(x['KP'])}</td><td>${esc(x['PL'])}</td><td>${esc(x['대장PC'])}</td><td class="n">${esc(x['날짜'])}</td><td>${esc(x['녹화'])}</td><td>${link(x['영상'],x['영상']?'유튜브':'')}</td><td>${link(x['링크'],x['파일']?'한글 파일':'')}</td></tr>`).join('');
+  $('#logrows').innerHTML=L.map(x=>`<tr><td class="n">${esc(x['번호'])}</td><td>${esc(x['시나리오'])}</td><td>${esc(x['룰'])}</td><td>${esc(x['KP'])}</td><td>${esc(x['PL'])}</td><td>${esc(x['대장PC'])}</td><td class="n">${esc(x['날짜'])}</td><td>${esc(x['녹화'])}</td><td>${vids(x['영상'],true)}</td><td>${link(x['링크'],x['파일']?'한글 파일':'')}</td></tr>`).join('');
 }
 function sessFor(d){
   if(!LOGS)return '';
   const n=d['이름'].replace(/\s/g,'');
   const L=LOGS.filter(x=>(x['대장PC']||'').replace(/\(추정\)/g,'').split(/[,，]/).some(p=>p.replace(/\s/g,'')===n));
-  return L.length?`<div class="sec"><h3>세션 기록 (비공개)</h3><ol class="sess">${L.map(x=>`<li>${esc(x['번호'])}. ${esc(x['시나리오'])} <span class="who">KP ${esc(x['KP'])} · PL ${esc(x['PL'])}</span> ${link(x['영상'],x['영상']?'▶ 영상':'')} ${link(x['링크'],x['링크']?'한글 파일':'')}</li>`).join('')}</ol></div>`:'';
+  return L.length?`<div class="sec"><h3>세션 기록 (비공개)</h3><ol class="sess">${L.map(x=>`<li>${esc(x['번호'])}. ${esc(x['시나리오'])} <span class="who">KP ${esc(x['KP'])} · PL ${esc(x['PL'])}</span> ${vids(x['영상'],false)} ${link(x['링크'],x['링크']?'한글 파일':'')}</li>`).join('')}</ol></div>`:'';
 }
 $('#logbtn').addEventListener('click',()=>{location.hash='logs'});
 $('#logclose').addEventListener('click',()=>{location.hash=''});
