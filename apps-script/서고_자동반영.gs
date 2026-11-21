@@ -15,6 +15,7 @@
 const REPO = 'PrayPeace/Character_Archive';
 const BRANCH = 'main';
 const SUMMARY_ID = '1dauOCIxwd8xORReChEVdK7RoYzZ3vBp6pTSah2dAC30'; // 요약 시트 v5
+const LOG_ID = '12VdOKj4qn_ehY9oAIlLkJpN8xAME1QCA7VniJnjic-k';     // 세션 로그 (비공개)
 
 function onOpen() {
   SpreadsheetApp.getUi().createMenu('📚 서고')
@@ -158,7 +159,7 @@ function commit_(files, message) {
 function toast_(m) { try { SpreadsheetApp.getActiveSpreadsheet().toast(m, '📚 서고', 8); } catch (e) { Logger.log(m); } }
 
 /* ---------- 3. 비공개 세션 로그 (사이트의 '세션 로그' 탭) ----------
- * 요약 시트의 '세션로그' 탭을 비밀번호가 맞을 때만 돌려줌. 친구 닉네임이 있어 깃허브에는 안 올림.
+ * '세션 로그 (비공개)' 시트의 '세션로그' 탭을 비밀번호가 맞을 때만 돌려줌. 친구 닉네임이 있어 깃허브에는 안 올림.
  * 배포: 배포 → 새 배포 → 유형 '웹 앱', 실행: 나, 액세스: 모든 사용자 → 나온 주소를 사이트 LOG_URL에.
  * 비밀번호: 스크립트 속성 LOG_PASSWORD
  */
@@ -170,9 +171,9 @@ function doGet(e) {
     Utilities.sleep(800);                       // 마구 넣어 보기 늦추기
     body = { ok: false };
   } else {
-    const v = SpreadsheetApp.openById(SUMMARY_ID).getSheetByName('세션로그').getDataRange().getDisplayValues();
-    const h = v[0];
-    body = { ok: true, sessions: v.slice(1).filter(r => r.join('')).map(r => Object.fromEntries(h.map((k, i) => [k, r[i]]))) };
+    const v = SpreadsheetApp.openById(LOG_ID).getSheetByName('세션로그').getDataRange().getDisplayValues();
+    const h = v[0].filter(k => k !== '머리말');   // 머리말(확인용)은 안 보냄
+    body = { ok: true, sessions: v.slice(1).filter(r => r.join('')).map(r => Object.fromEntries(h.map(k => [k, r[v[0].indexOf(k)]]))) };
   }
   return ContentService.createTextOutput(JSON.stringify(body)).setMimeType(ContentService.MimeType.JSON);
 }
@@ -184,7 +185,7 @@ function linkSessionFiles() {
   const map = {};
   const walk = f => { const fi = f.getFiles(); while (fi.hasNext()) { const x = fi.next(); map[x.getName()] = x.getUrl(); } const fo = f.getFolders(); while (fo.hasNext()) walk(fo.next()); };
   walk(it.next());
-  const sh = SpreadsheetApp.openById(SUMMARY_ID).getSheetByName('세션로그');
+  const sh = SpreadsheetApp.openById(LOG_ID).getSheetByName('세션로그');
   const v = sh.getDataRange().getValues(), h = v[0], fi = h.indexOf('파일'), li = h.indexOf('링크');
   let n = 0;
   for (let r = 1; r < v.length; r++) { const u = map[v[r][fi]]; if (u && v[r][li] !== u) { sh.getRange(r + 1, li + 1).setValue(u); n++; } }
