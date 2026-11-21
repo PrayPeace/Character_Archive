@@ -103,7 +103,44 @@ table.log a{color:var(--accent)}
 .sess .who{color:var(--muted);font-size:13px}
 footer{color:var(--muted);font-size:13px;border-top:1px solid var(--line);padding-block:20px}
 @media (max-width:700px){.tabs{flex-wrap:nowrap;overflow-x:auto;width:100%;padding-bottom:4px}.tab{white-space:nowrap}.file{grid-template-columns:1fr}.file .big{max-height:60vh}.tools{margin-left:0;width:100%}input{flex:1}.grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}}
-@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+/* 상세 시트 */
+.statg{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:6px}
+.stat{border:1px solid var(--line);border-radius:4px;padding:6px 8px;background:var(--raise)}
+.stat small{display:block;font-size:11px;color:var(--muted);font-family:var(--mono);letter-spacing:.04em}
+.stat b{font-family:var(--mono);font-size:18px;font-weight:500;font-variant-numeric:tabular-nums}
+.stat i{font-style:normal;font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:6px}
+.skills{display:flex;flex-wrap:wrap;gap:4px 6px;margin:0;padding:0;list-style:none}
+.skills li{font-size:13px;border:1px solid var(--line);border-radius:3px;padding:1px 7px}
+.skills li b{font-family:var(--mono);font-weight:500;margin-left:5px;font-variant-numeric:tabular-nums}
+.skills li.hi{border-color:color-mix(in srgb,var(--c) 70%,var(--line))}
+.skills li.hi b{color:var(--accent)}
+details.more summary{cursor:pointer;color:var(--muted);font-size:13px;margin-top:8px}
+details.more[open] summary{margin-bottom:6px}
+table.wp{border-collapse:collapse;width:100%;font-size:13px}
+table.wp th,table.wp td{text-align:left;padding:4px 8px 4px 0;border-bottom:1px solid var(--line);vertical-align:top}
+table.wp th{font-weight:500;color:var(--muted);font-size:12px}
+table.wp td.n{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.tagbtn{all:unset;cursor:pointer;font-size:12px;padding:2px 9px;border-radius:999px;border:1px solid var(--line);color:var(--muted)}
+.tagbtn:hover,.tagbtn:focus-visible{color:var(--fg);border-color:var(--accent)}
+.tagbtn::before{content:"#";opacity:.6;margin-right:1px}
+.fav{font:inherit;font-size:13px;background:none;border:1px solid var(--line);border-radius:999px;color:var(--muted);padding:3px 12px;cursor:pointer}
+.fav[aria-pressed="true"]{color:var(--accent);border-color:var(--accent)}
+.ph .star{position:absolute;right:8px;bottom:8px;color:var(--accent);font-size:16px;text-shadow:0 1px 3px #0008}
+#favonly[aria-pressed="true"]{color:var(--accent);border-color:var(--accent)}
+/* 룰별 입장 연출: 한 번만, 천천히, 깜빡임 없음 */
+.file.enter{animation:in-fade .45s ease-out both}
+.file.enter.e-coc1920{animation:in-lens .8s cubic-bezier(.2,.7,.2,1) both}
+.file.enter.e-coc{animation:in-folder .5s ease-out both}
+.file.enter.e-sg{animation:in-scroll .75s cubic-bezier(.3,.6,.2,1) both}
+.file.enter.e-insane{animation:in-card .6s cubic-bezier(.3,.7,.3,1) both;transform-origin:50% 50%}
+.file.enter.e-uw{animation:in-glow .6s ease-out both}
+@keyframes in-fade{from{opacity:0;transform:scale(.985)}to{opacity:1;transform:none}}
+@keyframes in-lens{from{clip-path:circle(6% at 50% 30%);filter:sepia(.6)}to{clip-path:circle(150% at 50% 30%);filter:none}}
+@keyframes in-folder{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:none}}
+@keyframes in-scroll{from{clip-path:inset(0 0 100% 0)}to{clip-path:inset(0 0 0 0)}}
+@keyframes in-card{from{opacity:0;transform:perspective(1200px) rotateY(-70deg)}to{opacity:1;transform:none}}
+@keyframes in-glow{from{opacity:0;box-shadow:0 0 0 0 transparent}60%{box-shadow:0 0 40px -8px var(--c)}to{opacity:1;box-shadow:0 0 0 0 transparent}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 </style>
 
 <header class="top"><div class="wrap">
@@ -120,6 +157,7 @@ footer{color:var(--muted);font-size:13px;border-top:1px solid var(--line);paddin
     <input id="q" type="search" placeholder="이름, 직업, 시나리오 검색" aria-label="검색">
     <select id="st" aria-label="상태"><option value="">모든 상태</option><option value="생존">생존</option><option value="lost">로스트·사망</option><option value="etc">그 밖</option></select>
     <select id="sort" aria-label="정렬"><option value="img">그림 있는 인물 먼저</option><option value="id">룰·시대 순</option><option value="name">이름 순</option><option value="plays">시나리오 많은 순</option></select>
+    <button class="fav" id="favonly" type="button" aria-pressed="false" title="이 브라우저에서 ★ 표시한 인물만">★ 즐겨찾기</button>
   </div>
 </div></div>
 
@@ -145,19 +183,35 @@ const MAIN=['CoC1920','CoC현대','UW'];
 const LOST=/로스트|사망|격리|모험불가/;
 let DATA=[],rule='',$=s=>document.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const ls_=(k,v)=>{try{if(v===undefined)return localStorage.getItem(k);localStorage.setItem(k,v)}catch(e){return null}};
+let FAV=new Set();try{FAV=new Set(JSON.parse(ls_('fav')||'[]'))}catch(e){}
+const saveFav=()=>ls_('fav',JSON.stringify([...FAV]));
+const ENTER={CoC1920:'e-coc1920',CoC현대:'e-coc',델타그린:'e-coc',SG:'e-sg',인세인:'e-insane',UW:'e-uw'};
+function tagsOf(d){return [...new Set([d['시대'],d['직업'],d['종족'],...(d['태그']||[])].map(t=>String(t||'').trim()).filter(t=>t&&t.length<=20))]}
+function sheetSec(d){
+  const s=d['시트'];if(!s)return '';const o=[];
+  if(s['특성치'])o.push(`<div class="sec"><h3>특성치</h3><div class="statg">${s['특성치'].map(([k,v])=>`<div class="stat"><small>${esc(k)}</small><b>${v}</b><i>${Math.floor(v/2)}/${Math.floor(v/5)}</i></div>`).join('')}</div></div>`);
+  if(s['파생'])o.push(`<div class="sec"><h3>체력 · 마력 · 그 밖</h3><dl>${s['파생'].map(([k,v])=>`<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl></div>`);
+  if(s['기능']){const sk=s['기능'],top=sk.filter(x=>x[1]>=50).slice(0,16),li=x=>`<li class="${x[1]>=50?'hi':''}">${esc(x[0])}<b>${x[1]}</b></li>`;
+    o.push(`<div class="sec"><h3>주요 기능</h3><ul class="skills">${(top.length?top:sk.slice(0,8)).map(li).join('')}</ul><details class="more"><summary>모든 기능 ${sk.length}개 보기</summary><ul class="skills">${sk.map(li).join('')}</ul></details></div>`)}
+  if(s['무기'])o.push(`<div class="sec"><h3>무기</h3><table class="wp"><thead><tr><th>무기</th><th>성공</th><th>피해</th><th>사거리</th></tr></thead><tbody>${s['무기'].map(w=>`<tr><td>${esc(w[0])}</td><td class="n">${esc(w[1])}</td><td class="n">${esc(w[2])}</td><td>${esc(w[3])}</td></tr>`).join('')}</tbody></table></div>`);
+  if(s['소지품'])o.push(`<div class="sec"><h3>소지품</h3><ul class="skills">${s['소지품'].map(x=>`<li>${esc(x)}</li>`).join('')}</ul></div>`);
+  return o.join('');
+}
 const plays=d=>+d['시나리오횟수']||(d['시나리오']||[]).length||0;
 function sub(d){return [d['직업'],d['나이']&&(d['나이']+(/\d$/.test(d['나이'])?'세':'')),d['시대']].filter(Boolean).join(' · ')}
 function ph(d,cls){return d.img?`<img src="${d.img}" alt="${esc(d['이름'])}" loading="lazy">`:`<span class="ini">${esc((d['이름']||'?')[0])}</span>`}
 function render(){
   const q=$('#q').value.trim().toLowerCase(),st=$('#st').value,so=$('#sort').value;
-  let list=DATA.filter(d=>(!rule||d['서가']===rule)
+  const fo=$('#favonly').getAttribute('aria-pressed')==='true';
+  let list=DATA.filter(d=>(!fo||FAV.has(d.id))&&(!rule||d['서가']===rule)
     &&(!st||(st==='생존'?d['상태']==='생존':st==='lost'?LOST.test(d['상태']):d['상태']!=='생존'&&!LOST.test(d['상태'])))
-    &&(!q||[d['이름'],d['원어/별명'],d['직업'],d['시스템'],(d['시나리오']||[]).join(' '),d['한마디']].join(' ').toLowerCase().includes(q)));
+    &&(!q||[d['이름'],d['원어/별명'],d['직업'],d['시스템'],(d['시나리오']||[]).join(' '),d['한마디'],d['시대'],d['종족'],(d['태그']||[]).join(' ')].join(' ').toLowerCase().includes(q)));
   if(so==='img')list.sort((a,b)=>(!a.img)-(!b.img));
   if(so==='name')list.sort((a,b)=>a['이름'].localeCompare(b['이름'],'ko'));
   if(so==='plays')list.sort((a,b)=>plays(b)-plays(a));
   $('#grid').innerHTML=list.map(d=>{const R=RULES[d['서가']]||RULES.UW;return `<button class="card${LOST.test(d['상태'])?' lost':''}" data-id="${d.id}" style="--c:${R.c}">
-    <div class="ph">${ph(d)}<span class="rule">${R.tag}</span>${d['상태']&&d['상태']!=='생존'?`<span class="st">${esc(d['상태'])}</span>`:''}</div>
+    <div class="ph">${ph(d)}<span class="rule">${R.tag}</span>${d['상태']&&d['상태']!=='생존'?`<span class="st">${esc(d['상태'])}</span>`:''}${FAV.has(d.id)?'<span class="star" aria-label="즐겨찾기">★</span>':''}</div>
     <div class="meta"><span class="nm">${esc(d['이름'])}</span><span class="sub">${esc(sub(d)||d['시스템'])}</span></div></button>`}).join('');
   $('#empty').hidden=list.length>0;
 }
@@ -166,16 +220,17 @@ function open(id){
   const R=RULES[d['서가']]||RULES.UW;
   const info=[['시스템',d['시스템']],['시대',d['시대']],['분류',d['분류']],['성별',d['성별']],['나이',d['나이']],['국적·출신',d['국적']],['직업·역할',d['직업']],['종족',d['종족']],['이성 (현재/초기)',d['이성']],['참가',plays(d)?plays(d)+'회':'']].filter(x=>x[1]);
   const secs=[['외견',d['외견']],['성격',d['성격']],['배경',d['배경']],['비고',d['비고']]].filter(x=>x[1]);
-  $('#sheet').innerHTML=`<article class="file" style="--c:${R.c}">
+  $('#sheet').innerHTML=`<article class="file enter ${ENTER[d['서가']]||''}" style="--c:${R.c}">
     <button class="close" id="x" aria-label="닫기">×</button>
     <div class="big">${ph(d)}</div>
     <div class="body">
       <div><div class="eyebrow">${esc(d.id)}</div><h2 id="dname">${esc(d['이름'])}</h2>${d['원어/별명']?`<div class="alias">${esc(d['원어/별명'])}</div>`:''}</div>
-      <div class="chips"><span class="chip r">${R.tag}</span><span class="chip">${esc(d['상태']||'')}</span></div>
+      <div class="chips"><span class="chip r">${R.tag}</span><span class="chip">${esc(d['상태']||'')}</span>${tagsOf(d).map(t=>`<button class="tagbtn" type="button" data-tag="${esc(t)}">${esc(t)}</button>`).join('')}<button class="fav" id="favbtn" type="button" aria-pressed="${FAV.has(d.id)}">${FAV.has(d.id)?'★ 즐겨찾기됨':'☆ 즐겨찾기'}</button></div>
       ${d['한마디']?`<blockquote>${esc(d['한마디'])}</blockquote>`:''}
       <dl>${info.map(([k,v])=>`<dt>${k}</dt><dd>${esc(v)}</dd>`).join('')}</dl>
       ${secs.map(([k,v])=>`<div class="sec"><h3>${k}</h3><p>${esc(String(v).replace(/ \/ /g,'\n'))}</p></div>`).join('')}
-      ${(d['시나리오']||[]).length?`<div class="sec"><h3>함께한 시나리오</h3><ol>${d['시나리오'].map(s=>`<li>${esc(s)}</li>`).join('')}</ol></div>`:''}
+      ${sheetSec(d)}
+      ${(d['시나리오']||[]).length?`<div class="sec"><h3>함께한 시나리오</h3><ol>${d['시나리오'].map(s=>`<li><button class="tagbtn" type="button" data-tag="${esc(s)}">${esc(s)}</button></li>`).join('')}</ol></div>`:''}
       ${sessFor(d)}
       <div class="src">원본 탭 · ${esc(d['원본탭']||'개요에만 있음')}</div>
     </div></article>`;
@@ -215,7 +270,12 @@ $('#pwform').addEventListener('submit',e=>{e.preventDefault();unlock($('#pw').va
 $('#lq').addEventListener('input',renderLogs);
 function route(){const h=location.hash.slice(1);if(h==='logs'){close();showLogs(true);return}showLogs(false);h?open(h):close()}
 $('#grid').addEventListener('click',e=>{const c=e.target.closest('.card');if(c)location.hash=c.dataset.id});
-$('#sheet').addEventListener('click',e=>{if(e.target.id==='sheet'||e.target.id==='x'){location.hash='';close()}});
+$('#sheet').addEventListener('click',e=>{
+  if(e.target.id==='sheet'||e.target.id==='x'){location.hash='';close();return}
+  const t=e.target.closest('.tagbtn');if(t){$('#q').value=t.dataset.tag;rule='';document.querySelectorAll('.tab').forEach(b=>b.setAttribute('aria-pressed',b.dataset.r===''));location.hash='';close();render();$('#q').focus();return}
+  if(e.target.id==='favbtn'){const id=location.hash.slice(1);FAV.has(id)?FAV.delete(id):FAV.add(id);saveFav();e.target.setAttribute('aria-pressed',FAV.has(id));e.target.textContent=FAV.has(id)?'★ 즐겨찾기됨':'☆ 즐겨찾기';render()}
+});
+$('#favonly').addEventListener('click',e=>{const b=e.currentTarget;b.setAttribute('aria-pressed',b.getAttribute('aria-pressed')!=='true');render()});
 addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('#sheet').hidden)location.hash=''});
 addEventListener('hashchange',route);
 ['q','st','sort'].forEach(i=>$('#'+i).addEventListener('input',render));
