@@ -19,9 +19,13 @@ def shelf(r):
     M = {'저녁 노을 어스름': '저녁노을', '에모크로아': '에모크로아', '던전 월드': '던전월드', '아곤': '아곤', '조선 아곤': '아곤', '둘이서 수사': '둘수사',
          '너냐?!': '너냐', '인세인': '인세인', '델타 그린': '델타그린', '무협': '무협', '탐공사': '탐공사', '피아스코': '피아스코', '1시간 히어로': '1시간히어로'}
     return M.get(r['시스템'], '기타')
-by_tab = {c['원본탭']: c for c in chars if not c['원본탭'].startswith('(')}
-by_name = {c['이름']: c for c in chars if c['원본탭'].startswith('(')}
+import hashlib
+def th(t): return hashlib.sha256(t.encode('utf-8')).hexdigest()[:24]
+live = [c for c in chars if c.get('원본탭')]   # 비공개 껍데기(privatize.py)는 빼고
+by_tab = {c['원본탭']: c for c in live if not c['원본탭'].startswith('(')}
+by_name = {c['이름']: c for c in live if c['원본탭'].startswith('(')}
 merged_tabs = {t for c in chars for t in (c.get('다른탭') or [])}  # 중복으로 합쳐 지운 탭: 다시 만들지 않음
+hidden_tabs = {h for c in chars for h in [c.get('원본탭해시')] + (c.get('다른탭해시') or []) if h}  # 비공개로 뺀 탭
 def next_id(rule):
     p = {'CoC': 'coc', 'UW': 'uw', 'SG': 'sg', 'TA': 'ta'}.get(rule, 'etc')
     n = max([int(c['id'].split('-')[1]) for c in chars if c['id'].startswith(p + '-')] + [0]) + 1
@@ -29,7 +33,7 @@ def next_id(rule):
 added, changed = [], []
 for r in rows:
     tab = r['원본탭']
-    if tab in merged_tabs: continue
+    if tab in merged_tabs or th(tab) in hidden_tabs: continue
     c = by_tab.get(tab) if not tab.startswith('(') else by_name.get(r['이름'])
     if c:
         if c.get('고정'): continue
@@ -48,7 +52,7 @@ for r in rows:
         im.save(os.path.join(ROOT, 'img', nid + '.webp'), 'WEBP', quality=80); c['img'] = 'img/%s.webp' % nid
     chars.append(c); by_tab[tab] = c; added.append((nid, c['이름'], c['서가']))
 # 그림만 나중에 올라온 경우
-for c in chars:
+for c in live:
     if not c.get('img') and not c['원본탭'].startswith('('):
         src = os.path.join(ROOT, 'sync', 'img', safe(c['원본탭']) + '.png')
         if os.path.exists(src):

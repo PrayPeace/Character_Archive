@@ -11,3 +11,6 @@ python3 "$ROOT/tools/match.py" "$W" > "$W/match.log"
 python3 "$ROOT/tools/xlsx.py" "$W" "$W/summary.xlsx"
 python3 "$ROOT/tools/merge.py" "$W" "$ROOT"
 python3 "$ROOT/tools/sheet.py" "$W" "$ROOT"
+python3 "$ROOT/tools/privatize.py" "$ROOT"
+git -C "$ROOT" show HEAD:characters.json > "$W/prev.json" 2>/dev/null || true
+python3 "$ROOT/tools/validate.py" "$ROOT" "$W/prev.json"

@@ -20,6 +20,7 @@ def score(c):
 def dedupe(chars, root):
     groups = {}
     for c in chars:
+        if not c.get('이름'): continue   # 비공개 껍데기
         groups.setdefault(key(c), []).append(c)
     gone, log = set(), []
     for g in groups.values():

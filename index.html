@@ -234,7 +234,7 @@ table.wp td.n{font-family:var(--mono);font-variant-numeric:tabular-nums}
     <input id="q" type="search" placeholder="이름, 직업, 시나리오 검색" aria-label="검색">
     <select id="st" aria-label="상태"><option value="">모든 상태</option><option value="생존">생존</option><option value="lost">로스트·사망</option><option value="etc">그 밖</option></select>
     <select id="sort" aria-label="정렬"><option value="img">그림 있는 인물 먼저</option><option value="id">룰·시대 순</option><option value="name">이름 순</option><option value="plays">시나리오 많은 순</option></select>
-    <button class="fav" id="favonly" type="button" aria-pressed="false" title="★ 표시한 인물만 (비밀번호로 열면 어느 기기에서나 같아요)">★ 즐겨찾기</button>
+    <button class="fav" id="favonly" type="button" aria-pressed="false" title="★ 표시한 인물만">★ 즐겨찾기</button>
     <button class="fav" id="memo" type="button" aria-pressed="false" title="로스트·사망한 인물들">🕯 추모관</button>
   </div>
 </div></div>
@@ -243,7 +243,7 @@ table.wp td.n{font-family:var(--mono);font-variant-numeric:tabular-nums}
   <h2>세션 로그</h2>
   <p class="msg">키퍼와 플레이어가 적힌 비공개 기록이에요. 비밀번호가 있어야 보여요.</p>
   <form class="logbar" id="pwform"><input id="pw" type="password" placeholder="비밀번호" aria-label="비밀번호" autocomplete="current-password"><button class="lockbtn" type="submit" style="margin:0">열기</button><span class="msg" id="pwmsg"></span></form>
-  <div id="logbody" hidden><div class="logbar"><input id="lq" type="search" placeholder="시나리오, 키퍼, 플레이어, 캐릭터 검색" aria-label="세션 검색"><button class="lockbtn" type="button" id="logclose" style="margin:0">캐릭터로 돌아가기</button></div><div class="tblwrap"><table class="log"><thead><tr><th>번호</th><th>시나리오</th><th>룰</th><th>키퍼</th><th>플레이어</th><th>내 캐릭터</th><th>날짜</th><th>녹화</th><th>영상</th><th>기록</th></tr></thead><tbody id="logrows"></tbody></table></div></div>
+  <div id="logbody" hidden><div class="logbar"><input id="lq" type="search" placeholder="시나리오, 키퍼, 플레이어, 캐릭터 검색" aria-label="세션 검색"><button class="lockbtn" type="button" id="logclose" style="margin:0">캐릭터로 돌아가기</button><button class="lockbtn" type="button" id="logout" style="margin:0" hidden>로그아웃</button></div><div class="tblwrap"><table class="log"><thead><tr><th>번호</th><th>시나리오</th><th>룰</th><th>키퍼</th><th>플레이어</th><th>내 캐릭터</th><th>날짜</th><th>녹화</th><th>영상</th><th>기록</th></tr></thead><tbody id="logrows"></tbody></table></div></div>
 </section>
 <main class="wrap" id="mainlist"><div class="grid" id="grid"></div><div id="lb" hidden role="dialog" aria-label="앨범"><img alt=""><p></p><div class="nav"><button type="button" data-k="-1" aria-label="이전">‹</button><button type="button" data-k="0" aria-label="닫기">닫기</button><button type="button" id="setcover">대표로</button><button type="button" data-k="1" aria-label="다음">›</button></div></div><p class="empty" id="empty" hidden>조건에 맞는 인물이 없어요.</p></main>
 <footer><div class="wrap">◈프레이피스 캐릭터 모음집에서 자동으로 옮겨 오는 서고입니다.</div></footer>
@@ -262,12 +262,19 @@ const LOST=/로스트|사망|격리|모험불가/;
 let DATA=[],rule='',$=s=>document.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const ls_=(k,v)=>{try{if(v===undefined)return localStorage.getItem(k);localStorage.setItem(k,v)}catch(e){return null}};
-let FAV=new Set();try{FAV=new Set(JSON.parse(ls_('fav')||'[]'))}catch(e){}
-const saveFav=()=>ls_('fav',JSON.stringify([...FAV]));
-// 즐겨찾기 동기화: 세션 로그 비밀번호로 한 번 열면 이 기기에 기억해 두고, 웹 앱(스크립트 속성 FAV)에 저장해 어느 기기에서나 같게 함
-const favPw=()=>ls_('favpw');
-function pushFav(){const pw=favPw();if(!pw||!LOG_URL)return;fetch(LOG_URL+'?op=favset&pw='+encodeURIComponent(pw)+'&ids='+encodeURIComponent([...FAV].join(','))).catch(()=>{})}
-async function pullFav(pw){if(!pw||!LOG_URL)return;try{const j=await(await fetch(LOG_URL+'?op=fav&pw='+encodeURIComponent(pw))).json();if(!j.ok)return;const sv=j.fav||[];if(ls_('favsynced')){FAV=new Set(sv)}else{sv.forEach(x=>FAV.add(x));ls_('favsynced','1')}saveFav();if(FAV.size!==sv.length)pushFav();if(typeof render==='function'&&DATA.length)render()}catch(e){}}
+const lsDel=k=>{try{localStorage.removeItem(k)}catch(e){}};
+lsDel('favpw');lsDel('favsynced');   // 예전 판이 남긴 비밀번호 지움
+/* 로그인: 비밀번호는 한 번만 보내고, 웹 앱이 준 표(14일 뒤 만료)만 이 기기에 둠. 로그아웃하면 지움 */
+function tok(){try{const t=JSON.parse(ls_('tok')||'null');if(t&&t.exp>Date.now())return t.t;lsDel('tok')}catch(e){}return ''}
+async function api(op,data){const r=await fetch(LOG_URL,{method:'POST',body:JSON.stringify(Object.assign({op,token:tok()},data||{}))});const j=await r.json();if(!j.ok&&j.error==='auth'){lsDel('tok');ownerUi()}return j}
+/* 즐겨찾기: 로그인한 주인은 웹 앱에 저장(어느 기기에서나 같음), 방문자는 이 브라우저에만 저장. 둘은 섞이지 않음 */
+let FAV=new Set();
+function loadFav(){try{FAV=new Set(JSON.parse(ls_(tok()?'ofav':'fav')||'[]'))}catch(e){FAV=new Set()}}
+loadFav();
+const saveFav=()=>ls_(tok()?'ofav':'fav',JSON.stringify([...FAV]));
+function pushFav(){if(tok()&&LOG_URL)api('favset',{ids:[...FAV]}).catch(()=>{})}
+async function pullFav(){if(!tok()||!LOG_URL)return;try{const j=await api('fav');if(!j.ok)return;FAV=new Set(j.fav||[]);saveFav();if(typeof render==='function'&&DATA.length)render()}catch(e){}}
+function ownerUi(){const on=!!tok();document.body.classList.toggle('owner',on);const b=document.getElementById('logout');if(b)b.hidden=!on;const f=document.getElementById('favonly');if(f)f.title=on?'★ 표시한 인물만 (주인 즐겨찾기: 어느 기기에서나 같아요)':'★ 표시한 인물만 (이 브라우저에만 저장돼요)'}
 const SCENE={CoC1920:'s-coc1920',CoC현대:'s-coc',델타그린:'s-coc',UW:'s-uw',SG:'s-sg',인세인:'s-insane'};
 const ENTER={CoC1920:'e-coc1920',CoC현대:'e-coc',델타그린:'e-coc',SG:'e-sg',인세인:'e-insane',UW:'e-uw'};
 function tagsOf(d){return [...new Set([d['시대'],d['직업'],d['종족'],...(d['태그']||[])].map(t=>String(t||'').trim()).filter(t=>t&&t.length<=20))]}
@@ -299,7 +306,7 @@ function render(){
   if(so==='img')list.sort((a,b)=>(!a.img)-(!b.img));
   if(so==='name')list.sort((a,b)=>a['이름'].localeCompare(b['이름'],'ko'));
   if(so==='plays')list.sort((a,b)=>plays(b)-plays(a));
-  if(mo){$('#grid').innerHTML=`<div class="memohead"><b>추모관</b>돌아오지 못한 이들을 기억합니다 · ${list.length}명</div>`+list.map(d=>{const C=d['연대기']||[],L=C[C.length-1],w=d['한마디']||lastLine(d);return `<button class="mcard" data-id="${d.id}"><span class="mp">${ph(d)}</span><span><b>${esc(d['이름'])}</b><small>${esc(d['상태'])} · ${esc(sub(d)||d['시스템'])}</small>${w?`<q>${esc(w)}</q>`:''}<span class="last">${L?`마지막 세션 · ${esc(L[1])}${L[2]?' ('+esc(L[2])+')':''}`:'마지막 세션 기록 없음'}</span></span></button>`}).join('');$('#empty').hidden=list.length>0;return}
+  if(mo){$('#grid').innerHTML=`<div class="memohead"><b>추모관</b>돌아오지 못한 이들을 기억합니다 · ${list.length}명</div>`+list.map(d=>{const C=d['연대기']||[],L=C[C.length-1],w=d['마지막말']||d['한마디'];return `<button class="mcard" data-id="${d.id}"><span class="mp">${ph(d)}</span><span><b>${esc(d['이름'])}</b><small>${esc(d['상태'])} · ${esc(sub(d)||d['시스템'])}</small>${w?`<q>${esc(w)}</q>`:''}<span class="last">${L?`마지막 세션 · ${esc(L[1])}${L[2]?' ('+esc(L[2])+')':''}`:'마지막 세션 기록 없음'}</span></span></button>`}).join('');$('#empty').hidden=list.length>0;return}
   $('#grid').innerHTML=list.map(d=>{const R=RULES[d['서가']]||RULES.UW;return `<button class="card${LOST.test(d['상태'])?' lost':''}" data-id="${d.id}" style="--c:${R.c}">
     <div class="ph">${ph(d)}<span class="rule">${R.tag}</span>${d['상태']&&d['상태']!=='생존'?`<span class="st">${esc(d['상태'])}</span>`:''}${FAV.has(d.id)?'<span class="star" aria-label="즐겨찾기">★</span>':''}</div>
     <div class="meta"><span class="nm">${esc(d['이름'])}</span><span class="sub">${esc(sub(d)||d['시스템'])}</span></div></button>`}).join('');
@@ -336,16 +343,23 @@ function close(){$('#sheet').hidden=true;document.body.style.overflow='';}
 /* ---- 비공개 세션 로그: 앱 스크립트 웹 앱이 비밀번호를 확인하고 돌려줌. 데이터는 저장소에 없음 ---- */
 const LOG_URL='https://script.google.com/macros/s/AKfycbzDq0ROuPIsXvQ1wV1X5ilVRuhm6m3iM3-RxQpgiFIQVtbbSNO2tcJ4tidr4UPk9CDU3g/exec';  // 앱 스크립트 웹 앱 주소 (설정 안내 참고)
 let LOGS=null;
-const ss_=(k,v)=>{try{if(v===undefined)return sessionStorage.getItem(k);v===null?sessionStorage.removeItem(k):sessionStorage.setItem(k,v)}catch(e){return null}};
-function showLogs(on){$('#logs').hidden=!on;$('#mainlist').hidden=on;document.querySelector('.bar').hidden=on;if(on&&!LOGS&&ss_('pw'))unlock(ss_('pw'))}
-async function unlock(pw){
-  if(!LOG_URL){$('#pwmsg').textContent='아직 연결 전이에요.';return}
+function showLogs(on){$('#logs').hidden=!on;$('#mainlist').hidden=on;document.querySelector('.bar').hidden=on;if(on&&!LOGS&&tok())loadLogs()}
+async function loadLogs(){
   $('#pwmsg').textContent='여는 중…';
-  try{const r=await fetch(LOG_URL+'?pw='+encodeURIComponent(pw));const j=await r.json();
-    if(!j.ok){$('#pwmsg').textContent='비밀번호가 맞지 않아요.';ss_('pw',null);return}
-    LOGS=j.sessions||[];ss_('pw',pw);if(favPw()!==pw){ls_('favpw',pw);pullFav(pw)}$('#pwmsg').textContent='';$('#pwform').hidden=true;$('#logbody').hidden=false;renderLogs();
+  try{const j=await api('sessions');
+    if(!j.ok){$('#pwmsg').textContent='다시 로그인해 주세요.';$('#pwform').hidden=false;$('#logbody').hidden=true;return}
+    LOGS=j.sessions||[];$('#pwmsg').textContent='';$('#pwform').hidden=true;$('#logbody').hidden=false;renderLogs();
   }catch(e){$('#pwmsg').textContent='불러오지 못했어요. 잠시 뒤 다시 해 보세요.'}
 }
+async function unlock(pw){
+  if(!LOG_URL){$('#pwmsg').textContent='아직 연결 전이에요.';return}
+  $('#pwmsg').textContent='확인 중…';
+  try{const r=await fetch(LOG_URL,{method:'POST',body:JSON.stringify({op:'login',pw})});const j=await r.json();
+    if(!j.ok){$('#pwmsg').textContent=j.error==='locked'?'여러 번 틀려서 15분 동안 잠겼어요.':'비밀번호가 맞지 않아요.';return}
+    ls_('tok',JSON.stringify({t:j.token,exp:j.exp}));$('#pw').value='';ownerUi();loadFav();pullFav();loadLogs();
+  }catch(e){$('#pwmsg').textContent='불러오지 못했어요. 잠시 뒤 다시 해 보세요.'}
+}
+async function logout(){try{await api('logout')}catch(e){}lsDel('tok');lsDel('ofav');LOGS=null;ownerUi();loadFav();render();$('#logbody').hidden=true;$('#pwform').hidden=false;$('#pwmsg').textContent='로그아웃했어요. 이 기기에서 표를 지웠어요.'}
 function link(l,t){return l?`<a href="${esc(l)}" target="_blank" rel="noopener">${esc(t||'열기')}</a>`:esc(t||'')}
 function vids(v,short){const L=String(v||'').split(/\n+/).map(t=>{const m=t.match(/https?:\/\/\S+/);return m?{u:m[0],t:t.replace(m[0],'').trim()}:null}).filter(Boolean);if(!L.length)return'';return L.map((x,i)=>`<a href="${esc(x.u)}" target="_blank" rel="noopener" title="${esc(x.t)}">${short?(L.length>1?'▶'+(i+1):'▶ 영상'):(L.length>1?'▶ '+esc(x.t||'영상 '+(i+1)):'▶ 영상')}</a>`).join(short?' ':'<br>')}
 function renderLogs(){
@@ -363,6 +377,7 @@ $('#logbtn').addEventListener('click',()=>{location.hash='logs'});
 $('#logclose').addEventListener('click',()=>{location.hash=''});
 $('#pwform').addEventListener('submit',e=>{e.preventDefault();unlock($('#pw').value)});
 $('#lq').addEventListener('input',renderLogs);
+$('#logout').addEventListener('click',logout);ownerUi();
 function route(){const h=location.hash.slice(1);if(h==='logs'){close();showLogs(true);return}showLogs(false);h?open(h):close()}
 $('#grid').addEventListener('click',e=>{const c=e.target.closest('.card,.mcard');if(c)location.hash=c.dataset.id});
 $('#sheet').addEventListener('click',e=>{
@@ -373,16 +388,15 @@ $('#sheet').addEventListener('click',e=>{
 });
 $('#favonly').addEventListener('click',e=>{const b=e.currentTarget;b.setAttribute('aria-pressed',b.getAttribute('aria-pressed')!=='true');render()});
 $('#memo').addEventListener('click',e=>{const b=e.currentTarget;b.setAttribute('aria-pressed',b.getAttribute('aria-pressed')!=='true');render();scrollTo(0,0)});
-function lastLine(d){const s=d['이야기']||'';const m=s.match(/'([^']{4,60})'/g);return m?m[m.length-1].slice(1,-1):''}
 let LB=null;
 function lbList(d){const L=[];const add=(p,c)=>{if(p&&!L.some(x=>x[0]===p))L.push([p,c||''])};add(d.img0||d.img,'');(d['앨범']||[]).forEach(a=>add(a[0],a[1]));return L}
-function lbShow(){const L=lbList(LB.d),a=L[LB.i];$('#lb img').src=a[0];$('#lb img').alt=a[1]||LB.d['이름'];$('#lb p').textContent=`${a[1]||LB.d['이름']} · ${LB.i+1}/${L.length}`;const on=a[0]===LB.d.img;$('#setcover').textContent=on?'★ 대표 이미지':'대표로 정하기';$('#setcover').disabled=on}
+function lbShow(){const L=lbList(LB.d),a=L[LB.i];$('#lb img').src=a[0];$('#lb img').alt=a[1]||LB.d['이름'];$('#lb p').textContent=`${a[1]||LB.d['이름']} · ${LB.i+1}/${L.length}`;const on=a[0]===LB.d.img;$('#setcover').textContent=on?'★ 대표 이미지':'대표로 정하기';$('#setcover').disabled=on;$('#setcover').hidden=!tok()}
 // 대표 이미지: 웹 앱(스크립트 속성 COVER)에 저장. 읽기는 누구나, 바꾸기는 세션 로그 비밀번호로 연 기기에서만
 function applyCovers(m){if(!m)return;DATA.forEach(d=>{if(!d.img0)d.img0=d.img;const v=m[d.id];if(v&&lbList(d).some(x=>x[0]===v))d.img=v})}
 async function pullCovers(){if(!LOG_URL)return;try{const j=await(await fetch(LOG_URL+'?op=covers')).json();if(j.ok){applyCovers(j.cover);render();const h=location.hash.slice(1);if(h&&h!=='logs'&&!$('#sheet').hidden)open(h)}}catch(e){}}
-async function setCover(){const pw=favPw(),d=LB.d,v=lbList(d)[LB.i][0];if(!pw){$('#lb p').textContent='먼저 세션 로그를 비밀번호로 한 번 열어 주세요.';return}
+async function setCover(){const d=LB.d,v=lbList(d)[LB.i][0];if(!tok()){$('#lb p').textContent='먼저 세션 로그에서 로그인해 주세요.';return}
   $('#setcover').disabled=true;$('#setcover').textContent='저장 중…';
-  try{const j=await(await fetch(LOG_URL+'?op=coverset&pw='+encodeURIComponent(pw)+'&id='+encodeURIComponent(d.id)+'&src='+encodeURIComponent(v===d.img0?'':v))).json();
+  try{const j=await api('coverset',{id:d.id,src:v===d.img0?'':v});
     if(!j.ok)throw 0;d.img=v;lbShow();render();const i=LB.i;open(d.id);lbOpen(d,i)}catch(e){$('#lb p').textContent='저장하지 못했어요. 비밀번호와 웹 앱 배포를 확인해 주세요.';$('#setcover').disabled=false}}
 function lbOpen(d,i){if(!d)return;LB={d,i};lbShow();$('#lb').hidden=false;$('#lb [data-k="0"]').focus()}
 function lbClose(){$('#lb').hidden=true;LB=null}
@@ -390,13 +404,13 @@ $('#lb').addEventListener('click',e=>{if(e.target.id==='setcover'){setCover();re
 addEventListener('keydown',e=>{if(LB){if(e.key==='Escape')lbClose();if(e.key==='ArrowRight'||e.key==='ArrowLeft'){const L=lbList(LB.d).length;LB.i=(LB.i+(e.key==='ArrowRight'?1:-1)+L)%L;lbShow()}return}if(e.key==='Escape'&&!$('#sheet').hidden)location.hash=''});
 addEventListener('hashchange',route);
 ['q','st','sort'].forEach(i=>$('#'+i).addEventListener('input',render));
-fetch('characters.json?v='+Date.now(),{cache:'no-store'}).then(r=>r.json()).then(j=>{
+fetch('characters.json',{cache:'no-cache'}).then(r=>r.json()).then(j=>{
   DATA=j.filter(d=>(d['공개']||'O')==='O');
   {const ro=Object.keys(RULES),num=d=>+(d.id.split('-')[1]||0),pre=d=>d.id.split('-')[0];
    DATA.forEach(d=>d.img0=d.img);
    DATA.sort((a,b)=>(ro.indexOf(a['서가'])+1||99)-(ro.indexOf(b['서가'])+1||99)||String(a['시대']||'').localeCompare(String(b['시대']||''))||pre(a).localeCompare(pre(b))||num(a)-num(b))}
   pullCovers();
-  pullFav(favPw());
+  pullFav();
   const cnt=k=>DATA.filter(d=>d['서가']===k).length;
   const tb=k=>`<button class="tab" aria-pressed="false" data-r="${k}"><span class="dot" style="background:${RULES[k].c}"></span>${RULES[k].name}<span class="n">${cnt(k)}</span></button>`;
   const others=Object.keys(RULES).filter(k=>!MAIN.includes(k)&&cnt(k)).sort((a,b)=>(a==='미분류')-(b==='미분류')||cnt(b)-cnt(a));
