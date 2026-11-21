@@ -94,7 +94,7 @@ body.memorial .grid{grid-template-columns:repeat(auto-fill,minmax(260px,1fr))}
 /* detail */
 .sheet{position:fixed;inset:0;z-index:20;background:color-mix(in srgb,var(--bg) 80%,transparent);display:flex;justify-content:center;align-items:flex-start;overflow-y:auto;padding:calc(env(safe-area-inset-top,0px) + 24px) max(16px,env(safe-area-inset-right,0px)) calc(env(safe-area-inset-bottom,0px) + 24px) max(16px,env(safe-area-inset-left,0px))}
 .file{width:min(920px,100%);background:var(--panel);border:1px solid var(--line);border-radius:8px;display:grid;grid-template-columns:minmax(0,320px) minmax(0,1fr);overflow:hidden;position:relative}
-.file .big{background:var(--raise);min-height:300px;display:flex;align-items:flex-start;justify-content:center}
+.file .big{cursor:zoom-in;background:var(--raise);min-height:300px;display:flex;align-items:flex-start;justify-content:center}
 .file .big>*{position:sticky;top:0}
 .file .big img{width:100%;height:100%;object-fit:contain;object-position:top}
 .file .big .ini{font-family:var(--display);font-size:90px;color:var(--line)}
@@ -245,7 +245,7 @@ table.wp td.n{font-family:var(--mono);font-variant-numeric:tabular-nums}
   <form class="logbar" id="pwform"><input id="pw" type="password" placeholder="비밀번호" aria-label="비밀번호" autocomplete="current-password"><button class="lockbtn" type="submit" style="margin:0">열기</button><span class="msg" id="pwmsg"></span></form>
   <div id="logbody" hidden><div class="logbar"><input id="lq" type="search" placeholder="시나리오, 키퍼, 플레이어, 캐릭터 검색" aria-label="세션 검색"><button class="lockbtn" type="button" id="logclose" style="margin:0">캐릭터로 돌아가기</button></div><div class="tblwrap"><table class="log"><thead><tr><th>번호</th><th>시나리오</th><th>룰</th><th>키퍼</th><th>플레이어</th><th>내 캐릭터</th><th>날짜</th><th>녹화</th><th>영상</th><th>기록</th></tr></thead><tbody id="logrows"></tbody></table></div></div>
 </section>
-<main class="wrap" id="mainlist"><div class="grid" id="grid"></div><div id="lb" hidden role="dialog" aria-label="앨범"><img alt=""><p></p><div class="nav"><button type="button" data-k="-1" aria-label="이전">‹</button><button type="button" data-k="0" aria-label="닫기">닫기</button><button type="button" data-k="1" aria-label="다음">›</button></div></div><p class="empty" id="empty" hidden>조건에 맞는 인물이 없어요.</p></main>
+<main class="wrap" id="mainlist"><div class="grid" id="grid"></div><div id="lb" hidden role="dialog" aria-label="앨범"><img alt=""><p></p><div class="nav"><button type="button" data-k="-1" aria-label="이전">‹</button><button type="button" data-k="0" aria-label="닫기">닫기</button><button type="button" id="setcover">대표로</button><button type="button" data-k="1" aria-label="다음">›</button></div></div><p class="empty" id="empty" hidden>조건에 맞는 인물이 없어요.</p></main>
 <footer><div class="wrap">◈프레이피스 캐릭터 모음집에서 자동으로 옮겨 오는 서고입니다.</div></footer>
 
 <div class="sheet" id="sheet" hidden role="dialog" aria-modal="true" aria-labelledby="dname"></div>
@@ -368,22 +368,34 @@ $('#grid').addEventListener('click',e=>{const c=e.target.closest('.card,.mcard')
 $('#sheet').addEventListener('click',e=>{
   if(e.target.id==='sheet'||e.target.id==='x'){location.hash='';close();return}
   const t=e.target.closest('.tagbtn');if(t){$('#q').value=t.dataset.tag;rule='';document.querySelectorAll('.tab').forEach(b=>b.setAttribute('aria-pressed',b.dataset.r===''));location.hash='';close();render();$('#q').focus();return}
-  const al=e.target.closest('[data-al]');if(al){lbOpen(DATA.find(x=>x.id===location.hash.slice(1)),+al.dataset.al);return}
+  const al=e.target.closest('[data-al]'),bg=e.target.closest('.big');if(al||bg){const d=DATA.find(x=>x.id===location.hash.slice(1));if(!d)return;const L=lbList(d),src=al?d['앨범'][+al.dataset.al][0]:d.img;lbOpen(d,Math.max(0,L.findIndex(x=>x[0]===src)));return}
   if(e.target.id==='favbtn'){const id=location.hash.slice(1);FAV.has(id)?FAV.delete(id):FAV.add(id);saveFav();pushFav();e.target.setAttribute('aria-pressed',FAV.has(id));e.target.textContent=FAV.has(id)?'★ 즐겨찾기됨':'☆ 즐겨찾기';render()}
 });
 $('#favonly').addEventListener('click',e=>{const b=e.currentTarget;b.setAttribute('aria-pressed',b.getAttribute('aria-pressed')!=='true');render()});
 $('#memo').addEventListener('click',e=>{const b=e.currentTarget;b.setAttribute('aria-pressed',b.getAttribute('aria-pressed')!=='true');render();scrollTo(0,0)});
 function lastLine(d){const s=d['이야기']||'';const m=s.match(/'([^']{4,60})'/g);return m?m[m.length-1].slice(1,-1):''}
 let LB=null;
-function lbShow(){const a=LB.d['앨범'][LB.i];$('#lb img').src=a[0];$('#lb img').alt=a[1]||LB.d['이름'];$('#lb p').textContent=`${a[1]||LB.d['이름']} · ${LB.i+1}/${LB.d['앨범'].length}`}
+function lbList(d){const L=[];const add=(p,c)=>{if(p&&!L.some(x=>x[0]===p))L.push([p,c||''])};add(d.img0||d.img,'');(d['앨범']||[]).forEach(a=>add(a[0],a[1]));return L}
+function lbShow(){const L=lbList(LB.d),a=L[LB.i];$('#lb img').src=a[0];$('#lb img').alt=a[1]||LB.d['이름'];$('#lb p').textContent=`${a[1]||LB.d['이름']} · ${LB.i+1}/${L.length}`;const on=a[0]===LB.d.img;$('#setcover').textContent=on?'★ 대표 이미지':'대표로 정하기';$('#setcover').disabled=on}
+// 대표 이미지: 웹 앱(스크립트 속성 COVER)에 저장. 읽기는 누구나, 바꾸기는 세션 로그 비밀번호로 연 기기에서만
+function applyCovers(m){if(!m)return;DATA.forEach(d=>{if(!d.img0)d.img0=d.img;const v=m[d.id];if(v&&lbList(d).some(x=>x[0]===v))d.img=v})}
+async function pullCovers(){if(!LOG_URL)return;try{const j=await(await fetch(LOG_URL+'?op=covers')).json();if(j.ok){applyCovers(j.cover);render();const h=location.hash.slice(1);if(h&&h!=='logs'&&!$('#sheet').hidden)open(h)}}catch(e){}}
+async function setCover(){const pw=favPw(),d=LB.d,v=lbList(d)[LB.i][0];if(!pw){$('#lb p').textContent='먼저 세션 로그를 비밀번호로 한 번 열어 주세요.';return}
+  $('#setcover').disabled=true;$('#setcover').textContent='저장 중…';
+  try{const j=await(await fetch(LOG_URL+'?op=coverset&pw='+encodeURIComponent(pw)+'&id='+encodeURIComponent(d.id)+'&src='+encodeURIComponent(v===d.img0?'':v))).json();
+    if(!j.ok)throw 0;d.img=v;lbShow();render();const i=LB.i;open(d.id);lbOpen(d,i)}catch(e){$('#lb p').textContent='저장하지 못했어요. 비밀번호와 웹 앱 배포를 확인해 주세요.';$('#setcover').disabled=false}}
 function lbOpen(d,i){if(!d)return;LB={d,i};lbShow();$('#lb').hidden=false;$('#lb [data-k="0"]').focus()}
 function lbClose(){$('#lb').hidden=true;LB=null}
-$('#lb').addEventListener('click',e=>{const k=e.target.closest('[data-k]');if(!k){if(e.target.id==='lb')lbClose();return}const n=+k.dataset.k;if(!n)return lbClose();const L=LB.d['앨범'].length;LB.i=(LB.i+n+L)%L;lbShow()});
-addEventListener('keydown',e=>{if(LB){if(e.key==='Escape')lbClose();if(e.key==='ArrowRight'||e.key==='ArrowLeft'){const L=LB.d['앨범'].length;LB.i=(LB.i+(e.key==='ArrowRight'?1:-1)+L)%L;lbShow()}return}if(e.key==='Escape'&&!$('#sheet').hidden)location.hash=''});
+$('#lb').addEventListener('click',e=>{if(e.target.id==='setcover'){setCover();return}const k=e.target.closest('[data-k]');if(!k){if(e.target.id==='lb')lbClose();return}const n=+k.dataset.k;if(!n)return lbClose();const L=lbList(LB.d).length;LB.i=(LB.i+n+L)%L;lbShow()});
+addEventListener('keydown',e=>{if(LB){if(e.key==='Escape')lbClose();if(e.key==='ArrowRight'||e.key==='ArrowLeft'){const L=lbList(LB.d).length;LB.i=(LB.i+(e.key==='ArrowRight'?1:-1)+L)%L;lbShow()}return}if(e.key==='Escape'&&!$('#sheet').hidden)location.hash=''});
 addEventListener('hashchange',route);
 ['q','st','sort'].forEach(i=>$('#'+i).addEventListener('input',render));
 fetch('characters.json?v='+Date.now(),{cache:'no-store'}).then(r=>r.json()).then(j=>{
   DATA=j.filter(d=>(d['공개']||'O')==='O');
+  {const ro=Object.keys(RULES),num=d=>+(d.id.split('-')[1]||0),pre=d=>d.id.split('-')[0];
+   DATA.forEach(d=>d.img0=d.img);
+   DATA.sort((a,b)=>(ro.indexOf(a['서가'])+1||99)-(ro.indexOf(b['서가'])+1||99)||String(a['시대']||'').localeCompare(String(b['시대']||''))||pre(a).localeCompare(pre(b))||num(a)-num(b))}
+  pullCovers();
   pullFav(favPw());
   const cnt=k=>DATA.filter(d=>d['서가']===k).length;
   const tb=k=>`<button class="tab" aria-pressed="false" data-r="${k}"><span class="dot" style="background:${RULES[k].c}"></span>${RULES[k].name}<span class="n">${cnt(k)}</span></button>`;
