@@ -172,14 +172,14 @@ function toast_(m) { try { SpreadsheetApp.getActiveSpreadsheet().toast(m, '📚 
  * 비밀번호: 스크립트 속성 LOG_PASSWORD. 비밀번호는 로그인 때 한 번만 POST 본문으로 받고, 그 뒤로는 만료되는 표(토큰)만 씀.
  *  - GET  ?op=covers                      대표 이미지 목록 (누구나)
  *  - POST {op:'login', pw}                → {ok, token, exp}  (10분에 10번 틀리면 15분 잠금)
- *  - POST {op:'sessions'|'fav'|'favset'|'coverset'|'logout', token, ...}
+ *  - POST {op:'sessions'|'fav'|'favset'|'coverset'|'pickset'|'logout', token, ...}
  * 세션 로그에는 친구 닉네임이 있어 깃허브에는 안 올림.
  */
 const TOKEN_DAYS = 14;
 function json_(o) { return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
 function doGet(e) {
   const P = PropertiesService.getScriptProperties();
-  if (e && e.parameter && e.parameter.op === 'covers') return json_({ ok: true, cover: JSON.parse(P.getProperty('COVER') || '{}') });
+  if (e && e.parameter && e.parameter.op === 'covers') return json_({ ok: true, cover: JSON.parse(P.getProperty('COVER') || '{}'), picks: JSON.parse(P.getProperty('PICKS') || '[]') });
   return json_({ ok: false, error: 'old' });   // 비밀번호를 주소에 싣는 옛 방식은 막음
 }
 function tokens_(P) {
@@ -217,6 +217,10 @@ function doPost(e) {
     if (q.op === 'favset') {
       const ids = (Array.isArray(q.ids) ? q.ids : []).map(x => String(x).trim()).filter(x => /^[a-z]+-\d{3}$/.test(x)).slice(0, 500);
       P.setProperty('FAV', JSON.stringify(ids)); return json_({ ok: true, fav: ids });
+    }
+    if (q.op === 'pickset') {   // 서고지기의 추천 (첫 화면 전시, 최대 6명)
+      const ids = (Array.isArray(q.ids) ? q.ids : []).map(x => String(x).trim()).filter(x => /^[a-z]+-\d{3}$/.test(x)).slice(0, 6);
+      P.setProperty('PICKS', JSON.stringify(ids)); return json_({ ok: true, picks: ids });
     }
     if (q.op === 'coverset') {   // 대표 이미지 바꾸기 (src 빈 값이면 원래대로)
       const id = String(q.id || ''), src = String(q.src || ''), c = JSON.parse(P.getProperty('COVER') || '{}');
