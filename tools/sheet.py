@@ -3,7 +3,7 @@
 - 그 밖의 룰: 레벨 등 기본 수치, 판정(채팅 팔레트·매크로), 가방, 시트에 적힌 내용(정리본)
 플레이어 이름·템플릿 제작자·저작권 안내 칸은 읽지 않는다.
 사용: python3 sheet.py <작업폴더(tabs.json)> <저장소 루트>"""
-import base64, gzip, hashlib, hmac, json, os, re, sys
+import time, base64, gzip, hashlib, hmac, json, os, re, sys
 
 D, ROOT = sys.argv[1], sys.argv[2]
 tabs = json.load(open(os.path.join(D, 'tabs.json'), encoding='utf-8'))
@@ -268,7 +268,10 @@ for c in chars:
     body = by_tab.get(c.get('원본탭', ''))
     s = parse(body, c.get('서가', '')) if body else None
     if s:
-        if c.get('시트') != s: c['시트'] = s; n += 1
+        if c.get('시트') != s:
+            if c.get('시트'):   # 예전 시트는 성장 기록으로 남김(최근 8개)
+                c['시트이력'] = (c.get('시트이력') or [])[-7:] + [{'날짜': time.strftime('%Y-%m-%d'), '시트': c['시트']}]
+            c['시트'] = s; n += 1
     elif '시트' in c and body is not None:
         del c['시트']; n += 1
 json.dump(chars, open(CJ, 'w', encoding='utf-8'), ensure_ascii=False, indent=0)
