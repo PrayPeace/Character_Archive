@@ -1,0 +1,81 @@
+# 서고_자동반영.gs 자동 배포
+#  main의 apps-script/서고_자동반영.gs 가 바뀌면(또는 손으로 실행하면):
+#   1) 모음집 시트의 Apps Script 프로젝트를 내려받아, 이 코드가 들어 있는 파일만 저장소 판으로 바꿔 올림
+#      (다른 파일, 스크립트 속성의 비밀값은 건드리지 않음)
+#   2) 웹 앱 배포(세션 로그·즐겨찾기·대표 이미지)를 새 버전으로 바꿈
+#   3) 웹 앱 주소(?op=covers)가 대답하는지 확인
+#
+# 저장소 비밀값 (Settings → Secrets and variables → Actions)
+#   CLASPRC_JSON   필수. PC에서 clasp login 뒤 홈 폴더 .clasprc.json 내용 (TRPG_Archive에 넣은 것과 같은 값)
+#   GS_SCRIPT_ID   필수. 모음집 시트 Apps Script → 프로젝트 설정(톱니바퀴) → 스크립트 ID
+#   GS_DEPLOY_ID   필수. Apps Script → 배포 → 배포 관리 → 웹 앱의 배포 ID (AKfy… 로 시작)
+name: 서고 스크립트 배포
+on:
+  push:
+    branches: [main]
+    paths: ['apps-script/서고_자동반영.gs']
+  workflow_dispatch:
+permissions: { contents: read }
+concurrency: { group: gs-deploy, cancel-in-progress: false }
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - name: 비밀값 확인
+        env:
+          CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+          GS_SCRIPT_ID: ${{ secrets.GS_SCRIPT_ID }}
+          GS_DEPLOY_ID: ${{ secrets.GS_DEPLOY_ID }}
+        run: |
+          if [ -z "$CLASPRC_JSON" ] || [ -z "$GS_SCRIPT_ID" ] || [ -z "$GS_DEPLOY_ID" ]; then
+            echo "::warning::CLASPRC_JSON, GS_SCRIPT_ID, GS_DEPLOY_ID 비밀값이 다 있어야 배포해요. 이번엔 건너뛰어요"; echo "SKIP=1" >> "$GITHUB_ENV"; exit 0; fi
+          cp apps-script/서고_자동반영.gs /tmp/check.js && node --check /tmp/check.js
+      - name: clasp 준비
+        if: env.SKIP != '1'
+        env:
+          CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+        run: |
+          npm i -g @google/clasp@2.4.2
+          printf '%s' "$CLASPRC_JSON" > ~/.clasprc.json
+      - name: 코드 바꿔 올리기
+        if: env.SKIP != '1'
+        env:
+          GS_SCRIPT_ID: ${{ secrets.GS_SCRIPT_ID }}
+        run: |
+          D="$RUNNER_TEMP/gs"; mkdir -p "$D"; cd "$D"
+          printf '{"scriptId":"%s","rootDir":"."}' "$GS_SCRIPT_ID" > .clasp.json
+          clasp pull
+          ls -la
+          # 이 코드가 들어 있는 파일을 찾음 (REPO 줄로). 없으면 새 파일로 넣음
+          T=$(grep -l "const REPO = 'PrayPeace/Character_Archive'" ./*.js ./*.gs 2>/dev/null | head -1 || true)
+          if [ -z "$T" ]; then T="./서고_자동반영.js"; echo "::notice::기존 서고 코드를 못 찾아 새 파일($T)로 넣어요"; fi
+          N=$(grep -l "const REPO = 'PrayPeace/Character_Archive'" ./*.js ./*.gs 2>/dev/null | wc -l)
+          if [ "$N" -gt 1 ]; then echo "::error::서고 코드가 든 파일이 $N개예요. 하나만 남겨 주세요(같은 함수가 겹치면 스크립트가 고장 나요)"; exit 1; fi
+          echo "바꿀 파일: $T"
+          cp "$GITHUB_WORKSPACE/apps-script/서고_자동반영.gs" "$T"
+          clasp push --force
+      - name: 웹 앱 새 버전으로 배포
+        if: env.SKIP != '1'
+        env:
+          GS_SCRIPT_ID: ${{ secrets.GS_SCRIPT_ID }}
+          GS_DEPLOY_ID: ${{ secrets.GS_DEPLOY_ID }}
+        run: |
+          cd "$RUNNER_TEMP/gs"
+          clasp deploy --deploymentId "$GS_DEPLOY_ID" --description "자동 배포 ${GITHUB_SHA::7}"
+      - name: 웹 앱 대답 확인
+        if: env.SKIP != '1'
+        run: |
+          URL=$(grep -oE "const LOG_URL='[^']+'" index.html | cut -d"'" -f2)
+          for i in 1 2 3 4 5 6; do
+            R=$(curl -sL "$URL?op=covers" || true)
+            if echo "$R" | grep -q '"ok":true'; then echo "웹 앱 대답 확인: $R" | cut -c1-200; exit 0; fi
+            sleep 10
+          done
+          echo "::error::웹 앱이 ?op=covers 에 ok로 대답하지 않아요: $(echo "$R" | cut -c1-300)"; exit 1
+      - name: 정리
+        if: always()
+        run: rm -f ~/.clasprc.json; rm -rf "$RUNNER_TEMP/gs"
