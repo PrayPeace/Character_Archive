@@ -179,7 +179,7 @@ function open(id){
 function close(){$('#sheet').hidden=true;document.body.style.overflow='';}
 
 /* ---- 비공개 세션 로그: 앱 스크립트 웹 앱이 비밀번호를 확인하고 돌려줌. 데이터는 저장소에 없음 ---- */
-const LOG_URL='';  // 앱 스크립트 웹 앱 주소 (설정 안내 참고)
+const LOG_URL='https://script.google.com/macros/s/AKfycbzDq0ROuPIsXvQ1wV1X5ilVRuhm6m3iM3-RxQpgiFIQVtbbSNO2tcJ4tidr4UPk9CDU3g/exec';  // 앱 스크립트 웹 앱 주소 (설정 안내 참고)
 let LOGS=null;
 const ss_=(k,v)=>{try{if(v===undefined)return sessionStorage.getItem(k);v===null?sessionStorage.removeItem(k):sessionStorage.setItem(k,v)}catch(e){return null}};
 function showLogs(on){$('#logs').hidden=!on;$('#mainlist').hidden=on;document.querySelector('.bar').hidden=on;if(on&&!LOGS&&ss_('pw'))unlock(ss_('pw'))}
