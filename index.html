@@ -324,7 +324,7 @@ function open(id){
       ${d['이야기']?`<div class="sec"><h3>이야기</h3><p class="story">${esc(d['이야기'])}</p></div>`:''}
       ${(d['앨범']||[]).length?`<div class="sec"><h3>앨범 <small style="color:var(--muted)">${d['앨범'].length}장</small></h3><div class="album">${d['앨범'].map((a,i)=>`<button type="button" data-al="${i}" aria-label="${esc(a[1]||'그림 '+(i+1))}"><img src="${a[0]}" alt="" loading="lazy"></button>`).join('')}</div></div>`:''}
       ${sheetSec(d)}
-      ${(d['연대기']||[]).length?`<div class="sec"><h3>연대기</h3><ol class="chron">${d['연대기'].map(c=>`<li><span class="d">${esc(c[2]||'날짜 미상')} · 세션 ${esc(c[0])}</span>${esc(c[1])}</li>`).join('')}</ol></div>`:''}
+      ${(d['연대기']||[]).length?`<div class="sec"><h3>연대기</h3><ol class="chron">${d['연대기'].map(c=>`<li><span class="d">${esc(c[2]||'날짜 미상')}${c[0]?' · 세션 '+esc(c[0]):''}</span>${esc(c[1])}</li>`).join('')}</ol></div>`:''}
       ${(d['시나리오']||[]).length?`<div class="sec"><h3>함께한 시나리오</h3><ol>${d['시나리오'].map(s=>`<li><button class="tagbtn" type="button" data-tag="${esc(s)}">${esc(s)}</button></li>`).join('')}</ol></div>`:''}
       ${sessFor(d)}
       <div class="src">원본 탭 · ${esc(d['원본탭']||'개요에만 있음')}</div>
