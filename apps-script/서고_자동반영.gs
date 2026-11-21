@@ -71,7 +71,7 @@ function syncToSite() {
     sheets.forEach((sh, i) => {
       if (i < 4) return;                          // 앞의 개요 탭 3개와 --- 탭
       const tab = sh.getName();
-      if (known.has(tab) || Date.now() - t0 > 3 * 60 * 1000) return;
+      if (known.has(tab) || known.has(tabHash_(tab)) || Date.now() - t0 > 3 * 60 * 1000) return;
       let best = null;
       sh.getDataRange().getValues().forEach(row => row.forEach(v => {
         if (!(v && typeof v === 'object' && typeof v.getContentUrl === 'function')) return;
@@ -94,8 +94,15 @@ function syncToSite() {
 function knownTabs_() {
   const list = JSON.parse(rawFile_('characters.json') || '[]');
   const s = new Set();
-  list.forEach(c => { if (c['원본탭'] && c['원본탭'][0] !== '(') s.add(c['원본탭']); });
+  list.forEach(c => {
+    if (c['원본탭'] && c['원본탭'][0] !== '(') s.add(c['원본탭']);
+    [c['원본탭해시']].concat(c['다른탭해시'] || [], c['다른탭'] || []).forEach(h => { if (h) s.add(h); });   // 비공개로 뺀 탭(해시), 합쳐 지운 탭
+  });
   return s;
+}
+function tabHash_(t) {   // tools/privatize.py 와 같은 해시(sha256 앞 24자리)
+  return Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, t, Utilities.Charset.UTF_8)
+    .map(b => ('0' + (b & 255).toString(16)).slice(-2)).join('').slice(0, 24);
 }
 // 공개 저장소라 글자를 그대로 올리지 않음: gzip 후 HMAC-SHA256 키스트림으로 XOR (깃허브 Actions가 tools/unseal.py로 품)
 function seal_(text) {
@@ -160,39 +167,70 @@ function commit_(files, message) {
 }
 function toast_(m) { try { SpreadsheetApp.getActiveSpreadsheet().toast(m, '📚 서고', 8); } catch (e) { Logger.log(m); } }
 
-/* ---------- 3. 비공개 세션 로그 (사이트의 '세션 로그' 탭) ----------
- * '세션 로그 (비공개)' 시트의 '세션로그' 탭을 비밀번호가 맞을 때만 돌려줌. 친구 닉네임이 있어 깃허브에는 안 올림.
- * 배포: 배포 → 새 배포 → 유형 '웹 앱', 실행: 나, 액세스: 모든 사용자 → 나온 주소를 사이트 LOG_URL에.
- * 비밀번호: 스크립트 속성 LOG_PASSWORD
+/* ---------- 3. 비공개 세션 로그·즐겨찾기·대표 이미지 (웹 앱) ----------
+ * 배포: 배포 → 웹 앱, 실행: 나, 액세스: 모든 사용자. 주소는 사이트 LOG_URL. (GitHub Actions '서고 스크립트 배포'가 새 버전으로 바꿔 줌)
+ * 비밀번호: 스크립트 속성 LOG_PASSWORD. 비밀번호는 로그인 때 한 번만 POST 본문으로 받고, 그 뒤로는 만료되는 표(토큰)만 씀.
+ *  - GET  ?op=covers                      대표 이미지 목록 (누구나)
+ *  - POST {op:'login', pw}                → {ok, token, exp}  (10분에 10번 틀리면 15분 잠금)
+ *  - POST {op:'sessions'|'fav'|'favset'|'coverset'|'logout', token, ...}
+ * 세션 로그에는 친구 닉네임이 있어 깃허브에는 안 올림.
  */
+const TOKEN_DAYS = 14;
+function json_(o) { return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
 function doGet(e) {
-  const pw = (e && e.parameter && e.parameter.pw) || '';
-  const want = PropertiesService.getScriptProperties().getProperty('LOG_PASSWORD');
-  let body;
   const P = PropertiesService.getScriptProperties();
-  if (e && e.parameter && e.parameter.op === 'covers') {   // 대표 이미지 목록: 누구나 읽음(공개 그림 경로뿐)
-    return ContentService.createTextOutput(JSON.stringify({ ok: true, cover: JSON.parse(P.getProperty('COVER') || '{}') })).setMimeType(ContentService.MimeType.JSON);
-  }
-  if (!want || pw !== want) {
-    Utilities.sleep(800);                       // 마구 넣어 보기 늦추기
-    body = { ok: false };
-  } else if (e.parameter.op === 'fav') {         // 즐겨찾기 읽기 (어느 기기에서나 같게)
-    body = { ok: true, fav: JSON.parse(PropertiesService.getScriptProperties().getProperty('FAV') || '[]') };
-  } else if (e.parameter.op === 'coverset') {    // 대표 이미지 바꾸기 (src 빈 값이면 원래대로)
-    const id = String(e.parameter.id || ''), src = String(e.parameter.src || '');
-    const m = JSON.parse(P.getProperty('COVER') || '{}');
-    if (!/^[a-z]+-\d{3}$/.test(id) || (src && !/^img\/(album\/[a-z]+-\d{3}\/\d+|[a-z]+-\d{3})\.webp$/.test(src))) body = { ok: false };
-    else { if (src) m[id] = src; else delete m[id]; P.setProperty('COVER', JSON.stringify(m)); body = { ok: true, cover: m }; }
-  } else if (e.parameter.op === 'favset') {      // 즐겨찾기 저장
-    const ids = String(e.parameter.ids || '').split(',').map(x => x.trim()).filter(x => /^[a-z]+-\d{3}$/.test(x)).slice(0, 500);
-    PropertiesService.getScriptProperties().setProperty('FAV', JSON.stringify(ids));
-    body = { ok: true, fav: ids };
-  } else {
-    const v = SpreadsheetApp.openById(LOG_ID).getSheetByName('세션로그').getDataRange().getDisplayValues();
-    const h = v[0].filter(k => k !== '머리말');   // 머리말(확인용)은 안 보냄
-    body = { ok: true, sessions: v.slice(1).filter(r => r.join('')).map(r => Object.fromEntries(h.map(k => [k, r[v[0].indexOf(k)]]))) };
-  }
-  return ContentService.createTextOutput(JSON.stringify(body)).setMimeType(ContentService.MimeType.JSON);
+  if (e && e.parameter && e.parameter.op === 'covers') return json_({ ok: true, cover: JSON.parse(P.getProperty('COVER') || '{}') });
+  return json_({ ok: false, error: 'old' });   // 비밀번호를 주소에 싣는 옛 방식은 막음
+}
+function tokens_(P) {
+  const now = Date.now(), m = JSON.parse(P.getProperty('TOKENS') || '{}');
+  Object.keys(m).forEach(k => { if (m[k] < now) delete m[k]; });
+  return m;
+}
+function sha_(t) { return Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, t, Utilities.Charset.UTF_8)); }
+function doPost(e) {
+  let q = {};
+  try { q = JSON.parse((e && e.postData && e.postData.contents) || '{}'); } catch (x) { return json_({ ok: false }); }
+  const P = PropertiesService.getScriptProperties(), C = CacheService.getScriptCache();
+  const lock = LockService.getScriptLock(); lock.waitLock(10000);
+  try {
+    if (q.op === 'login') {
+      if (C.get('locked')) return json_({ ok: false, error: 'locked' });
+      const want = P.getProperty('LOG_PASSWORD');
+      if (!want || String(q.pw || '') !== want) {
+        Utilities.sleep(800);
+        const n = +(C.get('fails') || 0) + 1; C.put('fails', String(n), 600);
+        if (n >= 10) { C.put('locked', '1', 900); C.remove('fails'); }
+        return json_({ ok: false });
+      }
+      C.remove('fails');
+      const tok = Utilities.getUuid() + Utilities.getUuid().slice(0, 8), exp = Date.now() + TOKEN_DAYS * 864e5;
+      const m = tokens_(P); m[sha_(tok)] = exp;
+      const keys = Object.keys(m).sort((a, b) => m[b] - m[a]).slice(0, 20), mm = {}; keys.forEach(k => mm[k] = m[k]);
+      P.setProperty('TOKENS', JSON.stringify(mm));
+      return json_({ ok: true, token: tok, exp: exp });
+    }
+    const m = tokens_(P), th = sha_(String(q.token || ''));
+    if (!q.token || !m[th]) return json_({ ok: false, error: 'auth' });
+    if (q.op === 'logout') { delete m[th]; P.setProperty('TOKENS', JSON.stringify(m)); return json_({ ok: true }); }
+    if (q.op === 'fav') return json_({ ok: true, fav: JSON.parse(P.getProperty('FAV') || '[]') });
+    if (q.op === 'favset') {
+      const ids = (Array.isArray(q.ids) ? q.ids : []).map(x => String(x).trim()).filter(x => /^[a-z]+-\d{3}$/.test(x)).slice(0, 500);
+      P.setProperty('FAV', JSON.stringify(ids)); return json_({ ok: true, fav: ids });
+    }
+    if (q.op === 'coverset') {   // 대표 이미지 바꾸기 (src 빈 값이면 원래대로)
+      const id = String(q.id || ''), src = String(q.src || ''), c = JSON.parse(P.getProperty('COVER') || '{}');
+      if (!/^[a-z]+-\d{3}$/.test(id) || (src && !/^img\/(album\/[a-z]+-\d{3}\/\d+|[a-z]+-\d{3})\.webp$/.test(src))) return json_({ ok: false });
+      if (src) c[id] = src; else delete c[id];
+      P.setProperty('COVER', JSON.stringify(c)); return json_({ ok: true, cover: c });
+    }
+    if (q.op === 'sessions') {
+      const v = SpreadsheetApp.openById(LOG_ID).getSheetByName('세션로그').getDataRange().getDisplayValues();
+      const h = v[0].filter(k => k !== '머리말');   // 머리말(확인용)은 안 보냄
+      return json_({ ok: true, exp: m[th], sessions: v.slice(1).filter(r => r.join('')).map(r => Object.fromEntries(h.map(k => [k, r[v[0].indexOf(k)]]))) });
+    }
+    return json_({ ok: false });
+  } finally { lock.releaseLock(); }
 }
 
 /* 구글 드라이브 '세션 기록' 폴더에 한글 파일을 올려 두면, 파일 이름으로 찾아 '링크' 칸을 채움 (메뉴에서 실행) */

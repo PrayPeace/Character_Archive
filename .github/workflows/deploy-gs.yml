@@ -72,7 +72,10 @@ jobs:
           URL=$(grep -oE "const LOG_URL='[^']+'" index.html | cut -d"'" -f2)
           for i in 1 2 3 4 5 6; do
             R=$(curl -sL "$URL?op=covers" || true)
-            if echo "$R" | grep -q '"ok":true'; then echo "웹 앱 대답 확인: $R" | cut -c1-200; exit 0; fi
+            if echo "$R" | grep -q '"ok":true'; then echo "웹 앱 대답 확인: $R" | cut -c1-200
+              A=$(curl -sL -H 'Content-Type: text/plain' -d '{"op":"sessions"}' "$URL" || true)
+              if echo "$A" | grep -q '"error":"auth"'; then echo "POST(표 없음) 거절 확인: $A"; exit 0; fi
+              echo "::error::POST 확인 실패: $(echo "$A" | cut -c1-300)"; exit 1; fi
             sleep 10
           done
           echo "::error::웹 앱이 ?op=covers 에 ok로 대답하지 않아요: $(echo "$R" | cut -c1-300)"; exit 1
