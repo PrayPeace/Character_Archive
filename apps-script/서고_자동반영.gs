@@ -225,13 +225,14 @@ function paPriv_() {
 }
 /* 방문객에게 보일 것만: 승인한 요약(pub), 승인+공개 결말, 대장이 확정한 회차 */
 function paPub_(P, role) {
-  const rv = getBig_(P, 'PA_RV', {}), pv = paPriv_(), o = { sum: {}, end: {}, pt: {} };
+  const rv = getBig_(P, 'PA_RV', {}), pv = paPriv_(), o = { sum: {}, end: {}, pt: {}, rev: {} };
   Object.keys(rv).forEach(k => {
     const r = rv[k] || {}, id = k.slice(k.indexOf(':') + 1);
     if (k.indexOf('sum:') === 0 && r.pub) o.sum[id] = r.pub;
     if (k.indexOf('end:') === 0 && r.st === 'ok' && (r.vis === '공개' || (role && r.vis === '친구'))) {
       const e = ((pv.sessions || {})[id] || {}).ending; if (e && e.text) o.end[id] = e.text;
     }
+    if (k.indexOf('rev:') === 0 && r.text && (r.vis === '공개' || (role && r.vis === '친구'))) o.rev[id] = { text: r.text, vis: r.vis };   // 대장 후기
     if (k.indexOf('pt:') === 0 && r.status) o.pt[id] = { status: r.status, endedAt: r.endedAt || null };
   });
   return o;

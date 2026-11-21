@@ -3,7 +3,8 @@
 TRPG 캐릭터 아카이브 사이트입니다. 주소: https://praypeace.github.io/Character_Archive/
 
 ## 구성
-- `index.html` 사이트 (서가별 보기, 검색, 캐릭터 상세, 비밀번호로 여는 세션 로그)
+- `index.html` 프레이피스 서고(https://praypeace.github.io/)로 넘겨주는 페이지 (같은 id로 이동)
+- `classic.html` 예전 캐릭터 서고 화면 (서가별 보기, 검색, 캐릭터 상세, 비밀번호로 여는 세션 로그)
 - `characters.json` 캐릭터 목록. `img/<id>.webp` 캐릭터 그림
 - `apps-script/서고_자동반영.gs` 원본 시트(◈프레이피스 캐릭터 모음집)에 붙이는 앱 스크립트
 - `sync/` 앱 스크립트가 보내는 자료 (모음집 글자는 가려진 `dump.bin`, 새 탭 그림 `img/`)
