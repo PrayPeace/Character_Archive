@@ -174,18 +174,67 @@ function toast_(m) { try { SpreadsheetApp.getActiveSpreadsheet().toast(m, '📚 
  *  - POST {op:'login', pw}                → {ok, token, exp}  (10분에 10번 틀리면 15분 잠금)
  *  - POST {op:'sessions'|'fav'|'favset'|'coverset'|'pickset'|'logout', token, ...}
  * 세션 로그에는 친구 닉네임이 있어 깃허브에는 안 올림.
+ *
+ * 프레이피스 서고(praypeace.github.io)용 — 권한 두 가지:
+ *  - 스크립트 속성 ADMIN_PASSWORD 가 있으면: 그 비밀번호 = 관리자(쓰기), LOG_PASSWORD = 친구(읽기만).
+ *  - ADMIN_PASSWORD 가 없으면 지금처럼 LOG_PASSWORD 하나가 관리자.
+ *  - GET  ?op=pa_pub                      승인·공개된 요약/결말, 확정한 회차 상태 (누구나)
+ *  - POST {op:'whoami'}                   → {role, exp}
+ *  - POST {op:'pa_view'}                  친구 범위까지 보이는 결말 (로그인한 누구나)
+ *  - POST {op:'pa_get'} / {op:'pa_set', rv}   작업함 검토 기록 + 비공개 원본 (관리자)
+ * 비공개 원본은 드라이브의 'praypeace-archives-private.json' (가장 최근 것)에서 읽음. 깃허브에는 없음.
  */
 const TOKEN_DAYS = 14;
 function json_(o) { return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
 function doGet(e) {
   const P = PropertiesService.getScriptProperties();
+  if (e && e.parameter && e.parameter.op === 'pa_pub') return json_(Object.assign({ ok: true }, paPub_(P, '')));
   if (e && e.parameter && e.parameter.op === 'covers') return json_({ ok: true, cover: JSON.parse(P.getProperty('COVER') || '{}'), picks: JSON.parse(P.getProperty('PICKS') || '[]') });
   return json_({ ok: false, error: 'old' });   // 비밀번호를 주소에 싣는 옛 방식은 막음
 }
 function tokens_(P) {
   const now = Date.now(), m = JSON.parse(P.getProperty('TOKENS') || '{}');
-  Object.keys(m).forEach(k => { if (m[k] < now) delete m[k]; });
+  Object.keys(m).forEach(k => { if (texp_(m[k]) < now) delete m[k]; });
   return m;
+}
+function texp_(v) { return typeof v === 'number' ? v : (v && v.e) || 0; }
+function trole_(v) { return typeof v === 'number' ? 'admin' : (v && v.r) || 'friend'; }
+/* 큰 글은 스크립트 속성 한 칸(9KB)에 안 들어가서 나눠 담음 */
+function putBig_(P, k, s) {
+  const n = Math.ceil(s.length / 8000) || 1, o = {};
+  for (let i = 0; i < n; i++) o[k + '_' + i] = s.slice(i * 8000, (i + 1) * 8000);
+  o[k + '_N'] = String(n);
+  const old = +(P.getProperty(k + '_N') || 0);
+  P.setProperties(o);
+  for (let i = n; i < old; i++) P.deleteProperty(k + '_' + i);
+}
+function getBig_(P, k, d) {
+  const n = +(P.getProperty(k + '_N') || 0);
+  if (!n) return d;
+  let s = ''; for (let i = 0; i < n; i++) s += P.getProperty(k + '_' + i) || '';
+  try { return JSON.parse(s); } catch (x) { return d; }
+}
+function paPriv_() {
+  const C = CacheService.getScriptCache(), c = C.get('pa_priv');
+  if (c) return JSON.parse(c);
+  const it = DriveApp.getFilesByName('praypeace-archives-private.json');
+  let best = null; while (it.hasNext()) { const f = it.next(); if (!best || f.getLastUpdated() > best.getLastUpdated()) best = f; }
+  const o = best ? JSON.parse(best.getBlob().getDataAsString('UTF-8')) : { sessions: {}, playthroughs: {} };
+  const s = JSON.stringify(o); if (s.length < 90000) C.put('pa_priv', s, 600);
+  return o;
+}
+/* 방문객에게 보일 것만: 승인한 요약(pub), 승인+공개 결말, 대장이 확정한 회차 */
+function paPub_(P, role) {
+  const rv = getBig_(P, 'PA_RV', {}), pv = paPriv_(), o = { sum: {}, end: {}, pt: {} };
+  Object.keys(rv).forEach(k => {
+    const r = rv[k] || {}, id = k.slice(k.indexOf(':') + 1);
+    if (k.indexOf('sum:') === 0 && r.pub) o.sum[id] = r.pub;
+    if (k.indexOf('end:') === 0 && r.st === 'ok' && (r.vis === '공개' || (role && r.vis === '친구'))) {
+      const e = ((pv.sessions || {})[id] || {}).ending; if (e && e.text) o.end[id] = e.text;
+    }
+    if (k.indexOf('pt:') === 0 && r.status) o.pt[id] = { status: r.status, endedAt: r.endedAt || null };
+  });
+  return o;
 }
 function sha_(t) { return Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, t, Utilities.Charset.UTF_8)); }
 function doPost(e) {
@@ -196,8 +245,9 @@ function doPost(e) {
   try {
     if (q.op === 'login') {
       if (C.get('locked')) return json_({ ok: false, error: 'locked' });
-      const want = P.getProperty('LOG_PASSWORD');
-      if (!want || String(q.pw || '') !== want) {
+      const want = P.getProperty('LOG_PASSWORD'), adm = P.getProperty('ADMIN_PASSWORD'), pw = String(q.pw || '');
+      const role = adm ? (pw === adm ? 'admin' : (want && pw === want ? 'friend' : '')) : (want && pw === want ? 'admin' : '');
+      if (!role) {
         Utilities.sleep(800);
         const n = +(C.get('fails') || 0) + 1; C.put('fails', String(n), 600);
         if (n >= 10) { C.put('locked', '1', 900); C.remove('fails'); }
@@ -205,14 +255,26 @@ function doPost(e) {
       }
       C.remove('fails');
       const tok = Utilities.getUuid() + Utilities.getUuid().slice(0, 8), exp = Date.now() + TOKEN_DAYS * 864e5;
-      const m = tokens_(P); m[sha_(tok)] = exp;
-      const keys = Object.keys(m).sort((a, b) => m[b] - m[a]).slice(0, 20), mm = {}; keys.forEach(k => mm[k] = m[k]);
+      const m = tokens_(P); m[sha_(tok)] = { e: exp, r: role };
+      const keys = Object.keys(m).sort((a, b) => texp_(m[b]) - texp_(m[a])).slice(0, 20), mm = {}; keys.forEach(k => mm[k] = m[k]);
       P.setProperty('TOKENS', JSON.stringify(mm));
-      return json_({ ok: true, token: tok, exp: exp });
+      return json_({ ok: true, token: tok, exp: exp, role: role });
     }
     const m = tokens_(P), th = sha_(String(q.token || ''));
     if (!q.token || !m[th]) return json_({ ok: false, error: 'auth' });
     if (q.op === 'logout') { delete m[th]; P.setProperty('TOKENS', JSON.stringify(m)); return json_({ ok: true }); }
+    const role = trole_(m[th]);
+    if (q.op === 'whoami') return json_({ ok: true, role: role, exp: texp_(m[th]) });
+    if (q.op === 'pa_view') return json_(Object.assign({ ok: true }, paPub_(P, role)));
+    if (q.op === 'sessions') return sessions_(m[th]);
+    if (q.op === 'fav') return json_({ ok: true, fav: JSON.parse(P.getProperty('FAV') || '[]') });
+    if (role !== 'admin') return json_({ ok: false, error: 'role' });   // 아래는 쓰기: 관리자만
+    if (q.op === 'pa_get') return json_({ ok: true, rv: getBig_(P, 'PA_RV', {}), priv: paPriv_() });
+    if (q.op === 'pa_set') {
+      const rv = q.rv && typeof q.rv === 'object' ? q.rv : null, s = rv ? JSON.stringify(rv) : '';
+      if (!rv || s.length > 400000) return json_({ ok: false });
+      putBig_(P, 'PA_RV', s); return json_({ ok: true, n: Object.keys(rv).length });
+    }
     if (q.op === 'fav') return json_({ ok: true, fav: JSON.parse(P.getProperty('FAV') || '[]') });
     if (q.op === 'favset') {
       const ids = (Array.isArray(q.ids) ? q.ids : []).map(x => String(x).trim()).filter(x => /^[a-z]+-\d{3}$/.test(x)).slice(0, 500);
@@ -228,13 +290,13 @@ function doPost(e) {
       if (src) c[id] = src; else delete c[id];
       P.setProperty('COVER', JSON.stringify(c)); return json_({ ok: true, cover: c });
     }
-    if (q.op === 'sessions') {
-      const v = SpreadsheetApp.openById(LOG_ID).getSheetByName('세션로그').getDataRange().getDisplayValues();
-      const h = v[0].filter(k => k !== '머리말');   // 머리말(확인용)은 안 보냄
-      return json_({ ok: true, exp: m[th], sessions: v.slice(1).filter(r => r.join('')).map(r => Object.fromEntries(h.map(k => [k, r[v[0].indexOf(k)]]))) });
-    }
     return json_({ ok: false });
   } finally { lock.releaseLock(); }
+}
+function sessions_(tv) {
+  const v = SpreadsheetApp.openById(LOG_ID).getSheetByName('세션로그').getDataRange().getDisplayValues();
+  const h = v[0].filter(k => k !== '머리말');   // 머리말(확인용)은 안 보냄
+  return json_({ ok: true, exp: texp_(tv), sessions: v.slice(1).filter(r => r.join('')).map(r => Object.fromEntries(h.map(k => [k, r[v[0].indexOf(k)]]))) });
 }
 
 /* 구글 드라이브 '세션 기록' 폴더에 한글 파일을 올려 두면, 파일 이름으로 찾아 '링크' 칸을 채움 (메뉴에서 실행) */
