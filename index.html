@@ -299,7 +299,7 @@ function render(){
   if(so==='img')list.sort((a,b)=>(!a.img)-(!b.img));
   if(so==='name')list.sort((a,b)=>a['이름'].localeCompare(b['이름'],'ko'));
   if(so==='plays')list.sort((a,b)=>plays(b)-plays(a));
-  if(mo){$('#grid').innerHTML=`<div class="memohead"><b>추모관</b>돌아오지 못한 이들을 기억합니다 · ${list.length}명</div>`+list.map(d=>{const C=d['연대기']||[],L=C[C.length-1],w=d['한마디']||lastLine(d);return `<button class="mcard" data-id="${d.id}"><span class="mp">${ph(d)}</span><span><b>${esc(d['이름'])}</b><small>${esc(d['상태'])} · ${esc(sub(d)||d['시스템'])}</small>${w?`<q>${esc(w)}</q>`:''}<span class="last">${L?`마지막 세션 · ${esc(L[1])}${L[2]?' ('+esc(L[2])+')':''}`:'마지막 세션 기록 없음'}</span></span></button>`}).join('');$('#empty').hidden=list.length>0;return}
+  if(mo){$('#grid').innerHTML=`<div class="memohead"><b>추모관</b>돌아오지 못한 이들을 기억합니다 · ${list.length}명</div>`+list.map(d=>{const C=d['연대기']||[],L=C[C.length-1],w=d['마지막말']||d['한마디'];return `<button class="mcard" data-id="${d.id}"><span class="mp">${ph(d)}</span><span><b>${esc(d['이름'])}</b><small>${esc(d['상태'])} · ${esc(sub(d)||d['시스템'])}</small>${w?`<q>${esc(w)}</q>`:''}<span class="last">${L?`마지막 세션 · ${esc(L[1])}${L[2]?' ('+esc(L[2])+')':''}`:'마지막 세션 기록 없음'}</span></span></button>`}).join('');$('#empty').hidden=list.length>0;return}
   $('#grid').innerHTML=list.map(d=>{const R=RULES[d['서가']]||RULES.UW;return `<button class="card${LOST.test(d['상태'])?' lost':''}" data-id="${d.id}" style="--c:${R.c}">
     <div class="ph">${ph(d)}<span class="rule">${R.tag}</span>${d['상태']&&d['상태']!=='생존'?`<span class="st">${esc(d['상태'])}</span>`:''}${FAV.has(d.id)?'<span class="star" aria-label="즐겨찾기">★</span>':''}</div>
     <div class="meta"><span class="nm">${esc(d['이름'])}</span><span class="sub">${esc(sub(d)||d['시스템'])}</span></div></button>`}).join('');
@@ -373,7 +373,6 @@ $('#sheet').addEventListener('click',e=>{
 });
 $('#favonly').addEventListener('click',e=>{const b=e.currentTarget;b.setAttribute('aria-pressed',b.getAttribute('aria-pressed')!=='true');render()});
 $('#memo').addEventListener('click',e=>{const b=e.currentTarget;b.setAttribute('aria-pressed',b.getAttribute('aria-pressed')!=='true');render();scrollTo(0,0)});
-function lastLine(d){const s=d['이야기']||'';const m=s.match(/'([^']{4,60})'/g);return m?m[m.length-1].slice(1,-1):''}
 let LB=null;
 function lbList(d){const L=[];const add=(p,c)=>{if(p&&!L.some(x=>x[0]===p))L.push([p,c||''])};add(d.img0||d.img,'');(d['앨범']||[]).forEach(a=>add(a[0],a[1]));return L}
 function lbShow(){const L=lbList(LB.d),a=L[LB.i];$('#lb img').src=a[0];$('#lb img').alt=a[1]||LB.d['이름'];$('#lb p').textContent=`${a[1]||LB.d['이름']} · ${LB.i+1}/${L.length}`;const on=a[0]===LB.d.img;$('#setcover').textContent=on?'★ 대표 이미지':'대표로 정하기';$('#setcover').disabled=on}
