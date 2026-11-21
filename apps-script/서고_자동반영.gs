@@ -22,6 +22,7 @@ function onOpen() {
     .addItem('지금 사이트로 보내기', 'syncToSite')
     .addItem('요약 시트 지금 맞추기', 'updateSummarySheet')
     .addItem('세션 한글 파일 링크 채우기', 'linkSessionFiles')
+    .addItem('새 회의록으로 세션 로그 쓰기', 'autoSessionLog')
     .addSeparator()
     .addItem('매일 자동 보내기 켜기', 'installDailyTrigger')
     .addItem('매일 자동 보내기 끄기', 'removeDailyTrigger')
@@ -32,11 +33,12 @@ function installDailyTrigger() {
   removeDailyTrigger();
   ScriptApp.newTrigger('syncToSite').timeBased().everyDays(1).atHour(5).create();
   ScriptApp.newTrigger('updateSummarySheet').timeBased().everyDays(1).atHour(6).create();
-  toast_('매일 새벽 5시에 사이트로 보내고, 6시에 요약 시트를 맞춰요.');
+  ScriptApp.newTrigger('autoSessionLog').timeBased().everyDays(1).atHour(7).create();
+  toast_('매일 새벽 5시에 사이트로 보내고, 6시에 요약 시트를, 7시에 세션 로그를 맞춰요.');
 }
 function removeDailyTrigger() {
   ScriptApp.getProjectTriggers().forEach(t => {
-    if (['syncToSite', 'updateSummarySheet'].includes(t.getHandlerFunction())) ScriptApp.deleteTrigger(t);
+    if (['syncToSite', 'updateSummarySheet', 'autoSessionLog'].includes(t.getHandlerFunction())) ScriptApp.deleteTrigger(t);
   });
 }
 
@@ -191,3 +193,87 @@ function linkSessionFiles() {
   for (let r = 1; r < v.length; r++) { const u = map[v[r][fi]]; if (u && v[r][li] !== u) { sh.getRange(r + 1, li + 1).setValue(u); n++; } }
   toast_('한글 파일 링크 ' + n + '개를 채웠어요.');
 }
+
+/* ---------- 4. 새 회의록 한글 파일 → 세션 로그 자동 쓰기 ----------
+ * 드라이브 '세션 기록' 폴더(하위 폴더 포함)에서, 세션로그 '파일' 칸에 아직 없는 한글 파일을 찾아 한 줄씩 덧붙임.
+ * .hwpx 는 안의 글을 읽어 제목·KP·PL·내 캐릭터를 뽑고, .hwp(옛 형식)는 파일 이름만으로 적음.
+ * 내 캐릭터는 본문 앞부분에서 '프레이피스(이름)'·'이름(프레이피스)'·'이름(나)'를 찾고, 없으면 모음집 탭 이름과 맞춰 '(추정)'을 붙임.
+ * 기존 줄은 건드리지 않음. 매일 7시(자동 켜기 시) 또는 메뉴에서 실행.
+ */
+function autoSessionLog() {
+  const it = DriveApp.getFoldersByName('세션 기록');
+  if (!it.hasNext()) { toast_("드라이브에 '세션 기록' 폴더가 없어요."); return; }
+  const files = [];
+  const walk = f => { const fi = f.getFiles(); while (fi.hasNext()) { const x = fi.next(); if (/\.hwpx?$/i.test(x.getName())) files.push(x); } const fo = f.getFolders(); while (fo.hasNext()) walk(fo.next()); };
+  walk(it.next());
+
+  const sh = SpreadsheetApp.openById(LOG_ID).getSheetByName('세션로그');
+  const v = sh.getDataRange().getValues(), h = v[0];
+  const col = k => h.indexOf(k);
+  const have = new Set(v.slice(1).map(r => String(r[col('파일')] || '').trim()).filter(Boolean));
+  const tabs = SpreadsheetApp.getActiveSpreadsheet().getSheets().map(s => s.getName().trim()).filter(n => n.length >= 2);
+  const ME = /(프레이피스|PrayPeace|\bPP\b)/i;
+
+  const add = [];
+  files.sort((a, b) => a.getDateCreated() - b.getDateCreated()).forEach(f => {
+    const name = f.getName();
+    if (have.has(name)) return;
+    have.add(name);
+    let lines = [];
+    if (/\.hwpx$/i.test(name)) { try { lines = hwpxLines_(f.getBlob()); } catch (e) { Logger.log(name + ': ' + e); } }
+    const base = name.replace(/\.hwpx?$/i, '');
+    const num = (base.match(/^(\d+)\s*[.\s]/) || [])[1] || '';
+    const title = (lines[0] || base.replace(/^\d+\s*\.?\s*/, '')).trim();
+    const top = lines.slice(0, 10);
+    const roleLine = top.find(l => /(키퍼|KP|GM|마스터)\s*[:;：]|PL\s*[:;：]/i.test(l)) || '';
+    const kp = ((roleLine.match(/(?:키퍼|KP|GM|마스터)\s*[:;：]\s*([^/|]+)/i) || [])[1] || '').trim();
+    const pls = ((roleLine.match(/(?:PL|PC)\s*[:;：]\s*(.+)$/i) || [])[1] || '')
+      .split(/[,，、]/).map(x => x.trim()).filter(x => x && !ME.test(x)).join(',');
+    add.push(rowFor_(h, {
+      번호: num, 시나리오: title, 룰: ruleOf_(base + ' ' + title), KP: kp, PL: pls,
+      대장PC: myPc_(top, tabs, ME),
+      날짜: Utilities.formatDate(f.getLastUpdated(), 'Asia/Seoul', 'yyyy-MM-dd') + ' (파일)',
+      파일: name, 링크: f.getUrl(), 머리말: lines.slice(0, 8).join(' / ').slice(0, 400)
+    }));
+  });
+  if (add.length) sh.getRange(sh.getLastRow() + 1, 1, add.length, h.length).setValues(add);
+  linkSessionFiles();
+  toast_('새 세션 ' + add.length + '개를 세션 로그에 적었어요.');
+}
+
+function hwpxLines_(blob) {
+  const parts = Utilities.unzip(blob.setContentType('application/zip'))
+    .filter(b => /^Contents\/section\d+\.xml$/.test(b.getName()))
+    .sort((a, b) => a.getName().localeCompare(b.getName(), 'en', { numeric: true }));
+  const out = [];
+  parts.forEach(b => {
+    const x = b.getDataAsString('UTF-8');
+    (x.match(/<hp:p\b[\s\S]*?<\/hp:p>/g) || []).forEach(p => {
+      const t = (p.match(/<hp:t\b[^>]*>[\s\S]*?<\/hp:t>/g) || []).map(s => s.replace(/<[^>]+>/g, '')).join('')
+        .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&amp;/g, '&').trim();
+      if (t) out.push(t);
+    });
+  });
+  return out;
+}
+
+function ruleOf_(t) {
+  const R = [[/1시간\s*히어로/, '1시간히어로'], [/탐공사/, '탐공사'], [/무협/, '무협'], [/트라이앵글|\bTA\b/i, 'TA'], [/CoC|크툴루/i, 'CoC'], [/\bUW\b|언월|언리미티드/i, 'UW'], [/에모크로아/, '에모크로아'], [/시노비가미|\bSG\b/i, 'SG'],
+    [/저녁노을/, '저녁노을'], [/아곤/, '아곤'], [/던전\s*월드/, '던전월드'], [/둘이서\s*수사/, '둘수사'],
+    [/너냐/, '너냐'], [/인세인/, '인세인'], [/델타\s*그린/, '델타그린']];
+  const m = R.find(([re]) => re.test(t));
+  return m ? m[1] : '기타';
+}
+
+function myPc_(top, tabs, ME) {
+  const txt = top.join('\n');
+  let m = txt.match(/(?:프레이피스|PrayPeace|PP)\s*\(([^)]+)\)/i);          // 프레이피스(이름)
+  if (m) return m[1].trim();
+  m = txt.match(/([^\s,/()]+(?: [^\s,/()]+)?) *\((?:프레이피스|PrayPeace|PP|나)\)/i);   // 이름(프레이피스) / 이름(나)
+  if (m) return m[1].trim();
+  const hit = tabs.filter(n => txt.includes(n));
+  return hit.length ? hit[0] + ' (추정)' : '';
+}
+
+function rowFor_(h, o) { return h.map(k => (o[k] === undefined ? '' : o[k])); }
+
