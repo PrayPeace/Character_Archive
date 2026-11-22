@@ -178,7 +178,7 @@ function toast_(m) { try { SpreadsheetApp.getActiveSpreadsheet().toast(m, '📚 
  * 프레이피스 서고(praypeace.github.io)용 — 권한 두 가지:
  *  - 스크립트 속성 ADMIN_PASSWORD 가 있으면: 그 비밀번호 = 관리자(쓰기), LOG_PASSWORD = 친구(읽기만).
  *  - ADMIN_PASSWORD 가 없으면 지금처럼 LOG_PASSWORD 하나가 관리자.
- *  - GET  ?op=pa_pub                      승인·공개된 요약/결말, 확정한 회차 상태 (누구나)
+ *  - GET  ?op=pa_pub                      승인·공개된 요약/결말, 확정한 회차 상태, 승인한 추억 (누구나)
  *  - POST {op:'whoami'}                   → {role, exp}
  *  - POST {op:'pa_view'}                  친구 범위까지 보이는 결말 (로그인한 누구나)
  *  - POST {op:'pa_get'} / {op:'pa_set', rv}   작업함 검토 기록 + 비공개 원본 (관리자)
@@ -225,7 +225,7 @@ function paPriv_() {
 }
 /* 방문객에게 보일 것만: 승인한 요약(pub), 승인+공개 결말, 대장이 확정한 회차 */
 function paPub_(P, role) {
-  const rv = getBig_(P, 'PA_RV', {}), pv = paPriv_(), o = { sum: {}, end: {}, pt: {}, rev: {}, sc: {}, rate: {} };
+  const rv = getBig_(P, 'PA_RV', {}), pv = paPriv_(), o = { sum: {}, end: {}, pt: {}, rev: {}, sc: {}, rate: {}, mem: {} };
   Object.keys(rv).forEach(k => {
     const r = rv[k] || {}, id = k.slice(k.indexOf(':') + 1);
     if (k.indexOf('sum:') === 0 && r.pub) o.sum[id] = r.pub;
@@ -235,6 +235,11 @@ function paPub_(P, role) {
     if (k.indexOf('rev:') === 0 && r.text && (r.vis === '공개' || (role && r.vis === '친구'))) o.rev[id] = { text: r.text, vis: r.vis };   // 대장 후기
     if (k.indexOf('sc:') === 0) o.sc[id] = { owned: !!r.owned, wish: !!r.wish, prep: !!r.prep };   // 개변 메모(memo)는 빼고
     if (k.indexOf('rate:') === 0 && (r.work || r.play)) o.rate[id] = { work: +r.work || 0, play: +r.play || 0 };
+    if (k.indexOf('mem:') === 0 && r.st === 'ok') {   // 추억 후보: 친구가 나오는 장면은 로그인한 사람에게만
+      const m = (pv.memories || {})[id];
+      if (m && (role ? (r.vis === '공개' || r.vis === '친구') : (r.vis === '공개' && !m.friends)))
+        o.mem[id] = { sessionId: m.sessionId, kind: m.kind, who: m.who || '', text: r.text || m.text };
+    }
     if (k.indexOf('pt:') === 0 && r.status) o.pt[id] = { status: r.status, endedAt: r.endedAt || null };
   });
   return o;
