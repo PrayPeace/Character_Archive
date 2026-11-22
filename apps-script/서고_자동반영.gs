@@ -242,6 +242,17 @@ function paPub_(P, role) {
     }
     if (k.indexOf('pt:') === 0 && r.status) o.pt[id] = { status: r.status, endedAt: r.endedAt || null };
   });
+  // 원본에서 한꺼번에 승인한 것(대장이 채팅으로 승인): 작업함 기록이 없을 때만
+  const see = v => v === '공개' || (role && v === '친구');
+  Object.keys(pv.sessions || {}).forEach(id => {
+    const e = pv.sessions[id].ending;
+    if (e && e.text && e.status === 'approved' && !rv['end:' + id] && see(e.vis)) o.end[id] = e.text;
+  });
+  Object.keys(pv.memories || {}).forEach(id => {
+    const m = pv.memories[id];
+    if (m.status === 'approved' && !rv['mem:' + id] && see(m.vis) && (role || !m.friends))
+      o.mem[id] = { sessionId: m.sessionId, kind: m.kind, who: m.who || '', text: m.text };
+  });
   return o;
 }
 function sha_(t) { return Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, t, Utilities.Charset.UTF_8)); }
