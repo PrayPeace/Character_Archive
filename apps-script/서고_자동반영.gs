@@ -238,7 +238,7 @@ function paPub_(P, role) {
     if (k.indexOf('mem:') === 0 && r.st === 'ok') {   // 추억 후보: 친구가 나오는 장면은 로그인한 사람에게만
       const m = (pv.memories || {})[id];
       if (m && (role ? (r.vis === '공개' || r.vis === '친구') : (r.vis === '공개' && !m.friends)))
-        o.mem[id] = { sessionId: m.sessionId, kind: m.kind, who: m.who || '', text: r.text || m.text };
+        o.mem[id] = { sessionId: m.sessionId, kind: m.kind, who: m.who || '', text: r.text || m.text, pinned: !!m.pinned };
     }
     if (k.indexOf('pt:') === 0 && r.status) o.pt[id] = { status: r.status, endedAt: r.endedAt || null };
   });
@@ -251,7 +251,7 @@ function paPub_(P, role) {
   Object.keys(pv.memories || {}).forEach(id => {
     const m = pv.memories[id];
     if (m.status === 'approved' && !rv['mem:' + id] && see(m.vis) && (role || !m.friends))
-      o.mem[id] = { sessionId: m.sessionId, kind: m.kind, who: m.who || '', text: m.text };
+      o.mem[id] = { sessionId: m.sessionId, kind: m.kind, who: m.who || '', text: m.text, pinned: !!m.pinned };
   });
   return o;
 }
