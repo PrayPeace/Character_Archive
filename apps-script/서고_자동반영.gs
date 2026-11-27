@@ -216,12 +216,12 @@ function getBig_(P, k, d) {
 }
 function paPriv_() {
   const C = CacheService.getScriptCache(), c = C.get('pa_priv');
-  if (c) return JSON.parse(c);
+  if (c) return withTrpgMem_(JSON.parse(c));
   const it = DriveApp.getFilesByName('praypeace-archives-private.json');
   let best = null; while (it.hasNext()) { const f = it.next(); if (!best || f.getLastUpdated() > best.getLastUpdated()) best = f; }
   const o = best ? JSON.parse(best.getBlob().getDataAsString('UTF-8')) : { sessions: {}, playthroughs: {} };
   const s = JSON.stringify(o); if (s.length < 90000) C.put('pa_priv', s, 600);
-  return o;
+  return withTrpgMem_(o);
 }
 /* 방문객에게 보일 것만: 승인한 요약(pub), 승인+공개 결말, 대장이 확정한 회차 */
 function paPub_(P, role) {
@@ -238,7 +238,7 @@ function paPub_(P, role) {
     if (k.indexOf('mem:') === 0 && r.st === 'ok') {   // 추억 후보: 친구가 나오는 장면은 로그인한 사람에게만
       const m = (pv.memories || {})[id];
       if (m && (role ? (r.vis === '공개' || r.vis === '친구') : (r.vis === '공개' && !m.friends)))
-        o.mem[id] = { sessionId: m.sessionId, kind: m.kind, who: m.who || '', text: r.text || m.text, pinned: !!m.pinned };
+        o.mem[id] = { sessionId: m.sessionId, kind: m.kind, who: m.who || '', text: r.text || m.text, pinned: !!m.pinned, title: m.title || '' };
     }
     if (k.indexOf('pt:') === 0 && r.status) o.pt[id] = { status: r.status, endedAt: r.endedAt || null };
   });
@@ -251,7 +251,7 @@ function paPub_(P, role) {
   Object.keys(pv.memories || {}).forEach(id => {
     const m = pv.memories[id];
     if (m.status === 'approved' && !rv['mem:' + id] && see(m.vis) && (role || !m.friends))
-      o.mem[id] = { sessionId: m.sessionId, kind: m.kind, who: m.who || '', text: m.text, pinned: !!m.pinned };
+      o.mem[id] = { sessionId: m.sessionId, kind: m.kind, who: m.who || '', text: m.text, pinned: !!m.pinned, title: m.title || '' };
   });
   return o;
 }
@@ -262,6 +262,16 @@ function doPost(e) {
   const P = PropertiesService.getScriptProperties(), C = CacheService.getScriptCache();
   const lock = LockService.getScriptLock(); lock.waitLock(10000);
   try {
+    if (q.op === 'trpg_ping' || q.op === 'trpg_in') {     // TRPG 아카이브 방이 보냄: 연결 코드의 열쇠로 확인
+      if (C.get('locked')) return json_({ ok: false, error: 'locked' });
+      const want = P.getProperty('TRPG_KEY');
+      if (!want || String(q.key || '') !== want) {
+        const n = +(C.get('fails') || 0) + 1; C.put('fails', String(n), 600);
+        if (n >= 10) { C.put('locked', '1', 900); C.remove('fails'); }
+        return json_({ ok: false, error: 'key' });
+      }
+      return json_(q.op === 'trpg_ping' ? { ok: true } : trpgIn_(q));
+    }
     if (q.op === 'login') {
       if (C.get('locked')) return json_({ ok: false, error: 'locked' });
       const want = P.getProperty('LOG_PASSWORD'), adm = P.getProperty('ADMIN_PASSWORD'), pw = String(q.pw || '');
@@ -288,6 +298,10 @@ function doPost(e) {
     if (q.op === 'sessions') return sessions_(m[th]);
     if (q.op === 'fav') return json_({ ok: true, fav: JSON.parse(P.getProperty('FAV') || '[]') });
     if (role !== 'admin') return json_({ ok: false, error: 'role' });   // 아래는 쓰기: 관리자만
+    if (q.op === 'trpg_link') {   // TRPG 아카이브 연결 코드의 열쇠를 새로 만든다 (예전 열쇠는 못 씀)
+      const key = (Utilities.getUuid() + Utilities.getUuid()).replace(/-/g, '');
+      P.setProperty('TRPG_KEY', key); return json_({ ok: true, key: key });
+    }
     if (q.op === 'pa_get') return json_({ ok: true, rv: getBig_(P, 'PA_RV', {}), priv: paPriv_() });
     if (q.op === 'pa_set') {
       const rv = q.rv && typeof q.rv === 'object' ? q.rv : null, s = rv ? JSON.stringify(rv) : '';
@@ -349,19 +363,23 @@ function autoSessionLog() {
   const v = sh.getDataRange().getValues(), h = v[0];
   const col = k => h.indexOf(k);
   const have = new Set(v.slice(1).map(r => String(r[col('파일')] || '').trim()).filter(Boolean));
+  const linked = new Set(v.slice(1).map(r => String(r[col('링크')] || '')).filter(Boolean));
+  const trpgRow = {};   // TRPG 아카이브가 바로 보낸 줄: 같은 제목의 한글 파일이 오면 새 줄 대신 그 줄에 링크만
+  v.forEach((r, i) => { if (i && /^TRPG:/.test(String(r[col('파일')])) && !r[col('링크')]) trpgRow[String(r[col('시나리오')]).trim()] = i; });
   const tabs = SpreadsheetApp.getActiveSpreadsheet().getSheets().map(s => s.getName().trim()).filter(n => n.length >= 2);
   const ME = /(프레이피스|PrayPeace|\bPP\b)/i;
 
   const add = [];
   files.sort((a, b) => a.getDateCreated() - b.getDateCreated()).forEach(f => {
     const name = f.getName();
-    if (have.has(name)) return;
+    if (have.has(name) || linked.has(f.getUrl())) return;
     have.add(name);
     let lines = [];
     if (/\.hwpx$/i.test(name)) { try { lines = hwpxLines_(f.getBlob()); } catch (e) { Logger.log(name + ': ' + e); } }
     const base = name.replace(/\.hwpx?$/i, '');
     const num = (base.match(/^(\d+)\s*[.\s]/) || [])[1] || '';
     const title = (lines[0] || base.replace(/^\d+\s*\.?\s*/, '')).trim();
+    if (trpgRow[title] != null && col('링크') >= 0) { sh.getRange(trpgRow[title] + 1, col('링크') + 1).setValue(f.getUrl()); delete trpgRow[title]; return; }
     const top = lines.slice(0, 10);
     const roleLine = top.find(l => /(키퍼|KP|GM|마스터)\s*[:;：]|PL\s*[:;：]/i.test(l)) || '';
     const kp = ((roleLine.match(/(?:키퍼|KP|GM|마스터)\s*[:;：]\s*([^/|]+)/i) || [])[1] || '').trim();
@@ -415,3 +433,66 @@ function myPc_(top, tabs, ME) {
 
 function rowFor_(h, o) { return h.map(k => (o[k] === undefined ? '' : o[k])); }
 
+/* ---------- 5. TRPG 아카이브에서 바로 받기 ----------
+ * 방에서 세션 기록(내 스타일)을 만들면 방 서버가 op:'trpg_in'으로 보냄 (열쇠 = 작업함 점검 화면에서 만든 연결 코드).
+ *  - 세션로그: 파일 칸 'TRPG:<방>#<세션>' 줄을 새로 쓰거나 고침 (같은 세션을 다시 보내면 그 줄만 고침)
+ *  - '아카이브기록' 탭: 한 줄 요약·결말·후일담·명대사·본문. 결말은 여기에만 있고 어디에도 공개하지 않음 (기본 비공개)
+ *  - 명대사: AI가 고르고 방 서버가 실제 대사와 대조한 것. 추억관에 바로 걸림, 로그인한 사람만 (친구 닉네임이 나오므로)
+ */
+const TRPG_COLS = ['ID', '받은 때', '방', '세션', '제목', '날짜', '한 줄', '결말', '후일담', '명대사', '열쇠 단서', '본문'];
+function trpgSheet_() {
+  const ss = SpreadsheetApp.openById(LOG_ID);
+  let sh = ss.getSheetByName('아카이브기록');
+  if (!sh) { sh = ss.insertSheet('아카이브기록'); sh.getRange(1, 1, 1, TRPG_COLS.length).setValues([TRPG_COLS]); sh.setFrozenRows(1); }
+  return sh;
+}
+function trpgIn_(q) {
+  const str = (v, n) => String(v == null ? '' : v).replace(/\r/g, '').slice(0, n);
+  const id = str(q.id, 40);
+  if (!/^r[a-z0-9]{4,12}#\d{1,5}$/.test(id)) return { ok: false, error: 'id' };
+  const title = str(q.title, 120).trim() || '제목 없음';
+  const ME = /(프레이피스|PrayPeace|\bPP\b)/i;
+  const pl = (Array.isArray(q.pl) ? q.pl : []).map(x => str(x, 40).trim()).filter(x => x && !ME.test(x)).slice(0, 12);
+  const play = q.play && typeof q.play === 'object' ? q.play : null;
+  const date = str(q.date, 10) + (play && play.start ? ' ' + str(play.start, 5) + '~' + str(play.end, 5) : '');
+  const quotes = (Array.isArray(q.quotes) ? q.quotes : []).slice(0, 3).map(x => ({ who: str(x && x.who, 40), text: str(x && x.text, 200) })).filter(x => x.text);
+  const file = 'TRPG:' + id;
+  // 1) 세션로그 한 줄
+  const sh = SpreadsheetApp.openById(LOG_ID).getSheetByName('세션로그');
+  const v = sh.getDataRange().getValues(), h = v[0], fi = h.indexOf('파일');
+  const row = {
+    시나리오: title, 룰: ruleOf_(title + ' ' + str(q.rule, 40)), KP: str(q.kp, 40), PL: pl.join(','), 대장PC: str(q.myPc, 60),
+    날짜: date, 파일: file, 머리말: ('TRPG Archive · ' + str(q.room, 40) + ' 세션 ' + str(q.sess, 5) + ' · ' + str(q.one, 200)).slice(0, 400)
+  };
+  let at = -1; for (let r = 1; r < v.length; r++) if (String(v[r][fi]) === file) { at = r; break; }
+  if (at > 0) {   // 고치기: 비어 있지 않은 값만 덮고, 대장이 손댄 번호·링크·영상 칸은 그대로
+    const cur = v[at].slice();
+    h.forEach((k, i) => { if (row[k] !== undefined && row[k] !== '') cur[i] = row[k]; });
+    sh.getRange(at + 1, 1, 1, h.length).setValues([cur]);
+  } else sh.appendRow(rowFor_(h, row));
+  // 2) 아카이브기록 (비공개)
+  const t = trpgSheet_(), tv = t.getDataRange().getValues();
+  const rec = [id, Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd HH:mm'), str(q.room, 40), str(q.sess, 5), title, date, str(q.one, 200), str(q.ending, 400),
+    JSON.stringify((Array.isArray(q.epilogue) ? q.epilogue : []).slice(0, 20).map(x => str(x, 400))), JSON.stringify(quotes), str(q.keys, 300), str(q.body, 20000)];
+  let ta = -1; for (let r = 1; r < tv.length; r++) if (String(tv[r][0]) === id) { ta = r; break; }
+  if (ta > 0) t.getRange(ta + 1, 1, 1, rec.length).setValues([rec]); else t.appendRow(rec);
+  CacheService.getScriptCache().remove('trpg_mem');
+  return { ok: true, added: at < 0, row: at > 0 ? at + 1 : sh.getLastRow() };
+}
+// 추억관에 걸 명대사: 비공개 묶음의 memories에 더해 줌 (승인된 것으로, 로그인한 사람만)
+function trpgMems_() {
+  const C = CacheService.getScriptCache(), c = C.get('trpg_mem');
+  if (c) return JSON.parse(c);
+  const out = {};
+  const sh = SpreadsheetApp.openById(LOG_ID).getSheetByName('아카이브기록');
+  if (sh) sh.getDataRange().getValues().slice(1).forEach(r => {
+    let qs = []; try { qs = JSON.parse(r[9] || '[]'); } catch (e) {}
+    qs.forEach((x, i) => { out['trpg-' + String(r[0]).replace(/[^a-z0-9]/g, '-') + '-' + i] = { sessionId: 'TRPG:' + r[0], title: String(r[4]) + ' · 세션 ' + r[3], kind: 'quote', who: x.who || '', text: x.text, friends: true, status: 'approved', vis: '친구' }; });
+  });
+  const s = JSON.stringify(out); if (s.length < 90000) C.put('trpg_mem', s, 600);
+  return out;
+}
+function withTrpgMem_(o) {
+  try { o.memories = Object.assign({}, trpgMems_(), o.memories || {}); } catch (e) { Logger.log('trpg_mem: ' + e); }
+  return o;
+}
