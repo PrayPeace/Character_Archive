@@ -253,6 +253,7 @@ function paPub_(P, role) {
     if (m.status === 'approved' && !rv['mem:' + id] && see(m.vis) && (role || !m.friends))
       o.mem[id] = { sessionId: m.sessionId, kind: m.kind, who: m.who || '', text: m.text, pinned: !!m.pinned, title: m.title || '' };
   });
+  try { o.trpg = trpgSessions_(role); } catch (e) { Logger.log('trpg_ss: ' + e); o.trpg = []; }
   return o;
 }
 function sha_(t) { return Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, t, Utilities.Charset.UTF_8)); }
@@ -302,7 +303,7 @@ function doPost(e) {
       const key = (Utilities.getUuid() + Utilities.getUuid()).replace(/-/g, '');
       P.setProperty('TRPG_KEY', key); return json_({ ok: true, key: key });
     }
-    if (q.op === 'pa_get') return json_({ ok: true, rv: getBig_(P, 'PA_RV', {}), priv: paPriv_() });
+    if (q.op === 'pa_get') { let tr = []; try { tr = trpgSessions_('admin'); } catch (e) { Logger.log('trpg_ss: ' + e); } return json_({ ok: true, rv: getBig_(P, 'PA_RV', {}), priv: paPriv_(), trpg: tr }); }
     if (q.op === 'pa_set') {
       const rv = q.rv && typeof q.rv === 'object' ? q.rv : null, s = rv ? JSON.stringify(rv) : '';
       if (!rv || s.length > 400000) return json_({ ok: false });
@@ -476,7 +477,7 @@ function trpgIn_(q) {
     JSON.stringify((Array.isArray(q.epilogue) ? q.epilogue : []).slice(0, 20).map(x => str(x, 400))), JSON.stringify(quotes), str(q.keys, 300), str(q.body, 20000)];
   let ta = -1; for (let r = 1; r < tv.length; r++) if (String(tv[r][0]) === id) { ta = r; break; }
   if (ta > 0) t.getRange(ta + 1, 1, 1, rec.length).setValues([rec]); else t.appendRow(rec);
-  CacheService.getScriptCache().remove('trpg_mem');
+  CacheService.getScriptCache().removeAll(['trpg_mem', 'trpg_ss']);
   return { ok: true, added: at < 0, row: at > 0 ? at + 1 : sh.getLastRow() };
 }
 // 추억관에 걸 명대사: 비공개 묶음의 memories에 더해 줌 (승인된 것으로, 로그인한 사람만)
@@ -491,6 +492,27 @@ function trpgMems_() {
   });
   const s = JSON.stringify(out); if (s.length < 90000) C.put('trpg_mem', s, 600);
   return out;
+}
+/* 방에서 보낸 세션을 사이트 세션 목록에 붙일 모양으로: 세션로그 TRPG 줄(번호·룰·대장PC·KP·PL) + 아카이브기록(한 줄 요약·날짜)
+ * 결말·후일담·본문은 내주지 않음. KP·PL(친구 닉네임)은 로그인한 사람에게만 */
+function trpgSessions_(role) {
+  const C = CacheService.getScriptCache(), c = C.get('trpg_ss');
+  let L = c ? JSON.parse(c) : null;
+  if (!L) {
+    L = [];
+    const ss = SpreadsheetApp.openById(LOG_ID), lg = ss.getSheetByName('세션로그'), t = ss.getSheetByName('아카이브기록');
+    const byFile = {};
+    if (lg) { const v = lg.getDataRange().getValues(), h = v[0], col = k => h.indexOf(k);
+      v.slice(1).forEach(r => { const f = String(r[col('파일')] || ''); if (/^TRPG:/.test(f)) byFile[f.slice(5)] = { no: r[col('번호')], rule: r[col('룰')], kp: r[col('KP')], pl: r[col('PL')], pc: r[col('대장PC')] }; }); }
+    if (t) t.getDataRange().getValues().slice(1).forEach(r => {
+      const id = String(r[0] || ''); if (!/^r[a-z0-9]{4,12}#\d{1,5}$/.test(id)) return;
+      const g = byFile[id] || {}, d = String(r[5] || '').match(/\d{4}-\d{2}-\d{2}/);
+      L.push({ key: id, room: String(r[2] || ''), sess: +r[3] || 0, title: String(r[4] || ''), date: d ? d[0] : '', one: String(r[6] || ''),
+        no: /^\d+$/.test(String(g.no)) ? +g.no : null, rule: String(g.rule || ''), pc: String(g.pc || '').replace(/\s*\(추정\)\s*/g, ''), kp: String(g.kp || ''), pl: String(g.pl || '') });
+    });
+    const s = JSON.stringify(L); if (s.length < 90000) C.put('trpg_ss', s, 600);
+  }
+  return role ? L : L.map(x => Object.assign({}, x, { kp: '', pl: '' }));
 }
 function withTrpgMem_(o) {
   try { o.memories = Object.assign({}, trpgMems_(), o.memories || {}); } catch (e) { Logger.log('trpg_mem: ' + e); }
